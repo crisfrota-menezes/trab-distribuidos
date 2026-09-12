@@ -1,4 +1,4 @@
-from shared.event import criar_evento, evento_para_json, json_para_evento
+from shared.crypto import criar_evento, evento_para_json, json_para_evento
 
 evento = criar_evento(
     "pedido.criado",
