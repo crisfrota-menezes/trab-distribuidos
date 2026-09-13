@@ -85,13 +85,13 @@ def main():
 
     print("Fila criada:", FILA_PAGAMENTO)
 
-    print("carregando chave privada.")
+    print("Carregando chave privada...")
     chave_privada = crypto.carregar_chave_privada(CHAVE_PRIVADA)
     print("Chave privada carregada.")
 
-    print("carregando chave privada.")
+    print("Carregando chave pública do serviço principal...")
     chave_publica_estoque = crypto.carregar_chave_publica(CHAVE_PUBLICA_ESTOQUE)
-    print("Chave publica do Estoque carregada.")
+    print("Chave pública do serviço do Estoque carregada.")
 
     canal.basic_consume(queue=FILA_PAGAMENTO, on_message_callback=lambda ch, method, properties, body:
                         receber_evento(ch, method, properties, body, chave_privada, chave_publica_estoque),
