@@ -7,7 +7,7 @@ ROOT_DIR = os.path.dirname(BASE_DIR)
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-import shared.crypto as crypto
+import shared.auxi as auxi
 from shared.rabbitmq import criar_canal, EXCHANGE_ECOMMERCE
 
 FILA_ESTOQUE = "fila_estoque"
@@ -22,12 +22,12 @@ estoque = {
 }
 
 def publicar_evento(canal, evento, chave_privada):
-    crypto.assinar_evento(evento, chave_privada)
+    auxi.assinar_evento(evento, chave_privada)
 
     canal.basic_publish(
         exchange=EXCHANGE_ECOMMERCE,
         routing_key=evento['tipo'],
-        body=crypto.evento_para_json(evento),
+        body=auxi.evento_para_json(evento),
     )
 
     print(f"Evento publicado: {evento['tipo']}")
@@ -63,24 +63,24 @@ def processar_evento(canal, evento, chave_privada):
 
         print(f"Pedido {pedido_id} processado com sucesso. Estoque atualizado.")
 
-        evento_confirmacao = crypto.criar_evento("pedido.estoque_ok", {"pedido_id": pedido_id, "produtos": produtos})
+        evento_confirmacao = auxi.criar_evento("pedido.estoque_ok", {"pedido_id": pedido_id, "produtos": produtos})
 
         publicar_evento(canal, evento_confirmacao, chave_privada)
 
     else:
         print(f"\nPedido {pedido_id} não pode ser processado devido à falta de estoque.")
 
-        evento_resposta = crypto.criar_evento("pedido.estoque_indisponivel", {"pedido_id": pedido_id, "produtos": produtos})
+        evento_resposta = auxi.criar_evento("estoque.indisponivel", {"pedido_id": pedido_id, "produtos": produtos})
 
         publicar_evento(canal, evento_resposta, chave_privada)
 
 def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chave_publica_principal):
-    evento = crypto.json_para_evento(corpo)
+    evento = auxi.json_para_evento(corpo)
 
     print(f"\nEvento recebido: {evento['tipo']}")
     print(f"Pedido: {evento['dados']['pedido_id']}")
 
-    assinatura_valida = crypto.verificar_assinatura(evento, chave_publica_principal)
+    assinatura_valida = auxi.verificar_assinatura(evento, chave_publica_principal)
 
     if not assinatura_valida:
         print("Assinatura inválida. Evento descartado.")
@@ -105,11 +105,11 @@ def main():
     print(f"Fila '{FILA_ESTOQUE}' vinculada à exchange '{EXCHANGE_ECOMMERCE}' com a routing key 'pedido.criado'.")
 
     print("Carregando chave privada...")
-    chave_privada = crypto.carregar_chave_privada(CHAVE_PRIVADA)
+    chave_privada = auxi.carregar_chave_privada(CHAVE_PRIVADA)
     print("Chave privada carregada.")
 
     print("Carregando chave pública do serviço principal...")
-    chave_publica_principal = crypto.carregar_chave_publica(CHAVE_PUBLICA_PRINCIPAL)
+    chave_publica_principal = auxi.carregar_chave_publica(CHAVE_PUBLICA_PRINCIPAL)
     print("Chave pública do serviço principal carregada.")
 
     canal.basic_qos(prefetch_count=1)

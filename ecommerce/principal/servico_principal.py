@@ -6,7 +6,7 @@ ROOT_DIR = os.path.dirname(BASE_DIR)
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-import shared.crypto as crypto
+import shared.auxi as auxi
 from shared.rabbitmq import criar_canal, EXCHANGE_ECOMMERCE
 
 FILA_PRINCIPAL = "fila_principal"
@@ -21,12 +21,12 @@ CHAVE_PUBLICA_ENTREGA = os.path.join(BASE_DIR, "chaves", "publicas", "entrega.pe
 pedidos = {}
 
 def publicar_evento(canal, evento, chave_privada):
-    crypto.assinar_evento(evento, chave_privada)
+    auxi.assinar_evento(evento, chave_privada)
 
     canal.basic_publish(
         exchange=EXCHANGE_ECOMMERCE,
         routing_key=evento['tipo'],
-        body=crypto.evento_para_json(evento),
+        body=auxi.evento_para_json(evento),
     )
 
     print(f"Evento publicado: {evento['tipo']}")
@@ -49,7 +49,7 @@ def criar_pedido(canal, chave_privada):
 
     pedidos[pedido_id] = pedido
 
-    evento = crypto.criar_evento("pedido.criado", pedido)
+    evento = auxi.criar_evento("pedido.criado", pedido)
 
     publicar_evento(canal, evento, chave_privada)
 
@@ -82,7 +82,7 @@ def processar_evento(canal, evento, chave_privada):
         print("Estoque indisponível.")
         print("Pedido será excluído.")
 
-        evento_exclusao = crypto.criar_evento("pedido.excluido", 
+        evento_exclusao = auxi.criar_evento("pedido.excluido", 
                                               {"pedido_id": pedido_id, "produtos": pedido["produtos"]
                                             }
                                         )
@@ -103,7 +103,7 @@ def processar_evento(canal, evento, chave_privada):
         print("Pagamento recusado.")
         print("Pedido será excluído.")
 
-        evento_exclusao = crypto.criar_evento("pedido.excluido", 
+        evento_exclusao = auxi.criar_evento("pedido.excluido", 
                                             {"pedido_id": pedido_id, "produtos": pedido["produtos"]
                                             }
                                         )
@@ -113,7 +113,7 @@ def processar_evento(canal, evento, chave_privada):
         pedido["status"] = "excluido"
         
     elif tipo == "pedido.enviado":
-        pedido["status"]
+        pedido["status"] = "enviado"
 
         print("Pedido enviado!")
         print(f"Status atualizado para: {pedido["status"]}")    
@@ -122,7 +122,7 @@ def processar_evento(canal, evento, chave_privada):
         print(f"Evento desconhecido: {tipo}")
 
 def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chaves_publicas):
-    evento = crypto.json_para_evento(corpo)
+    evento = auxi.json_para_evento(corpo)
 
     tipo = evento["tipo"]
 
@@ -148,7 +148,7 @@ def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chaves_pub
         canal.basic_ack(delivery_tag=metodo.delivery_tag)
         return
 
-    assinatura_valida = crypto.verificar_assinatura(evento, chave_publica)
+    assinatura_valida = auxi.verificar_assinatura(evento, chave_publica)
 
     if not assinatura_valida:
         print("ERRO: assinatura inválida.")
@@ -190,19 +190,19 @@ def main():
 
     #Carregar chaves
     print("Carregando chave privada...")
-    chave_privada = crypto.carregar_chave_privada(CHAVE_PRIVADA)
+    chave_privada = auxi.carregar_chave_privada(CHAVE_PRIVADA)
     print("Chave privada carregada.")
 
     print("Carregando chave pública do Estoque...")
-    chave_publica_estoque = crypto.carregar_chave_publica(CHAVE_PUBLICA_ESTOQUE)
+    chave_publica_estoque = auxi.carregar_chave_publica(CHAVE_PUBLICA_ESTOQUE)
     print("Chave pública do Estoque carregada.")
 
     print("Carregando chave pública do Pagamento...")
-    chave_publica_pagamento = crypto.carregar_chave_publica(CHAVE_PUBLICA_PAGAMENTO)
+    chave_publica_pagamento = auxi.carregar_chave_publica(CHAVE_PUBLICA_PAGAMENTO)
     print("Chave pública do Pagamento carregada.")
 
     print("Carregando chave pública da Entrega...")
-    chave_publica_entrega = crypto.carregar_chave_publica(CHAVE_PUBLICA_ENTREGA)
+    chave_publica_entrega = auxi.carregar_chave_publica(CHAVE_PUBLICA_ENTREGA)
     print("Chave pública da Entrega carregada.")
 
     chaves_publicas = {

@@ -8,16 +8,16 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from shared.rabbitmq import criar_canal, EXCHANGE_ECOMMERCE
-import shared.crypto as crypto
+import shared.auxi as auxi
 
 FILA_ENTREGA = "fila_entrega"
 CHAVE_PRIVADA = os.path.join(BASE_DIR, "chaves", "privada.pem")
 CHAVE_PUBLICA_PAGAMENTO = os.path.join(BASE_DIR, "chaves", "publicas", "pagamento.pem")
 
 def publicar_evento(canal, evento, chave_privada):
-    crypto.assinar_evento(evento, chave_privada)
+    auxi.assinar_evento(evento, chave_privada)
 
-    canal.basic_publish(exchange=EXCHANGE_ECOMMERCE, routing_key=evento["tipo"], body=crypto.evento_para_json(evento))
+    canal.basic_publish(exchange=EXCHANGE_ECOMMERCE, routing_key=evento["tipo"], body=auxi.evento_para_json(evento))
 
     print(f"Evento publicado: {evento['tipo']}")
     print(f"Routing Key: {evento['tipo']}")
@@ -34,17 +34,17 @@ def processar_entrega(canal, evento, chave_privada):
     print("Preparando pedido...")
     print("Pedido pronto para envio.")
 
-    evento_resposta = crypto.criar_evento("pedido.enviado",{"pedido_id": pedido_id, "produtos": produtos})
+    evento_resposta = auxi.criar_evento("pedido.enviado",{"pedido_id": pedido_id, "produtos": produtos})
 
     publicar_evento(canal, evento_resposta, chave_privada)
 
 def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chave_publica_pagamento):
-    evento = crypto.json_para_evento(corpo)
+    evento = auxi.json_para_evento(corpo)
 
     print(f"\nEvento recebido: {evento['tipo']}")
     print(f"Pedido: {evento['dados']['pedido_id']}")
 
-    assinatura_valida = crypto.verificar_assinatura(evento, chave_publica_pagamento)
+    assinatura_valida = auxi.verificar_assinatura(evento, chave_publica_pagamento)
 
     if not assinatura_valida:
         print("Assinatura inválida. Evento descartado.")
@@ -72,11 +72,11 @@ def main():
     print("Fila criada:", FILA_ENTREGA)
 
     print("Carregando chave privada...")
-    chave_privada = crypto.carregar_chave_privada(CHAVE_PRIVADA)
+    chave_privada = auxi.carregar_chave_privada(CHAVE_PRIVADA)
     print("Chave privada carregada.")
 
     print("Carregando chave pública do serviço de Pagamento...")
-    chave_publica_pagamento = crypto.carregar_chave_publica(CHAVE_PUBLICA_PAGAMENTO)
+    chave_publica_pagamento = auxi.carregar_chave_publica(CHAVE_PUBLICA_PAGAMENTO)
     print("Chave pública do serviço de Pagamento carregada.")
 
     canal.basic_qos(prefetch_count=1)
