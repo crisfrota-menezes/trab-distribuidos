@@ -1,9 +1,18 @@
-from shared.rabbitmq import criar_canal, EXCHANGE_ECOMMERCE
+import os
+import sys
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(BASE_DIR)
+
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
 import shared.crypto as crypto
+from shared.rabbitmq import criar_canal, EXCHANGE_ECOMMERCE
 
 FILA_ESTOQUE = "fila_estoque"
-CHAVE_PRIVADA = "estoque/chaves/privada.pem"
-CHAVE_PUBLICA_PRINCIPAL = "estoque/chaves/publicas/principal.pem"
+CHAVE_PRIVADA = os.path.join(BASE_DIR, "chaves", "privada.pem")
+CHAVE_PUBLICA_PRINCIPAL = os.path.join(BASE_DIR, "chaves", "publicas", "principal.pem")
 
 #simulação de estoque
 estoque = {

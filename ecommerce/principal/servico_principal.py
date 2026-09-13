@@ -1,7 +1,15 @@
-from shared.rabbitmq import criar_canal, EXCHANGE_ECOMMERCE
-import shared.crypto as crypto
+import os
+import sys
 
-CHAVE_PRIVADA = "principal/chaves/privada.pem"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(BASE_DIR)
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+import shared.crypto as crypto
+from shared.rabbitmq import criar_canal, EXCHANGE_ECOMMERCE
+
+CHAVE_PRIVADA = os.path.join(BASE_DIR, "chaves", "privada.pem")
 
 def publicar_evento(canal, evento):
     canal.basic_publish(
