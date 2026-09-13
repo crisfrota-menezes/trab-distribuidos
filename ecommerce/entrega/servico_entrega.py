@@ -28,7 +28,7 @@ def processar_entrega(canal, evento, chave_privada):
     pedido_id = dados["pedido_id"]
     produtos = dados["produtos"]
 
-    print(f"\nPreparando entrega dp pedido {pedido_id}...")
+    print(f"\nPreparando entrega do pedido {pedido_id}...")
 
     print("Gerando nota fiscal...")
     print("Preparando pedido...")
@@ -75,16 +75,18 @@ def main():
     chave_privada = crypto.carregar_chave_privada(CHAVE_PRIVADA)
     print("Chave privada carregada.")
 
-    print("Carregando chave pública do serviço principal...")
+    print("Carregando chave pública do serviço de Pagamento...")
     chave_publica_pagamento = crypto.carregar_chave_publica(CHAVE_PUBLICA_PAGAMENTO)
-    print("Chave pública do serviço de entrega carregada.")
+    print("Chave pública do serviço de Pagamento carregada.")
 
     canal.basic_qos(prefetch_count=1)
 
     canal.basic_consume(queue=FILA_ENTREGA, on_message_callback=lambda ch, method, properties, body:
                         receber_evento(ch, method, properties, body, chave_privada, chave_publica_pagamento),
                     auto_ack=False
-                    )             
+                    )        
+
+    print("Aguardando eventos...")     
 
     canal.start_consuming()
 

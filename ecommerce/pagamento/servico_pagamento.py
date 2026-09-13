@@ -89,14 +89,18 @@ def main():
     chave_privada = crypto.carregar_chave_privada(CHAVE_PRIVADA)
     print("Chave privada carregada.")
 
-    print("Carregando chave pública do serviço principal...")
+    print("Carregando chave pública do serviço do Estoque...")
     chave_publica_estoque = crypto.carregar_chave_publica(CHAVE_PUBLICA_ESTOQUE)
     print("Chave pública do serviço do Estoque carregada.")
+
+    canal.basic_qos(prefetch_count=1)
 
     canal.basic_consume(queue=FILA_PAGAMENTO, on_message_callback=lambda ch, method, properties, body:
                         receber_evento(ch, method, properties, body, chave_privada, chave_publica_estoque),
                     auto_ack=False
-                    )                    
+                    )  
+
+    print("Aguardando eventos...")                  
 
     canal.start_consuming()
 
