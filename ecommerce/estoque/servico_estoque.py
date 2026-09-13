@@ -63,14 +63,14 @@ def processar_evento(canal, evento, chave_privada):
 
         print(f"Pedido {pedido_id} processado com sucesso. Estoque atualizado.")
 
-        evento_confirmacao = crypto.criar_evento("pedido.confirmado", {"pedido_id": pedido_id, "produtos": produtos})
+        evento_confirmacao = crypto.criar_evento("pedido.estoque_ok", {"pedido_id": pedido_id, "produtos": produtos})
 
         publicar_evento(canal, evento_confirmacao, chave_privada)
 
     else:
         print(f"\nPedido {pedido_id} não pode ser processado devido à falta de estoque.")
 
-        evento_resposta = crypto.criar_evento("estoque.indisponivel", {"pedido_id": pedido_id, "produtos": produtos})
+        evento_resposta = crypto.criar_evento("pedido.estoque_indisponivel", {"pedido_id": pedido_id, "produtos": produtos})
 
         publicar_evento(canal, evento_resposta, chave_privada)
 
