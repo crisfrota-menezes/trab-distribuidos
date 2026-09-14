@@ -83,8 +83,7 @@ def main():
 
     canal.basic_consume(queue=FILA_ENTREGA, on_message_callback=lambda ch, method, properties, body:
                         receber_evento(ch, method, properties, body, chave_privada, chave_publica_pagamento),
-                    auto_ack=False
-                    )        
+                        auto_ack=False)        
 
     print("Aguardando eventos...")     
 
