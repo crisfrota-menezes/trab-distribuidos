@@ -19,8 +19,14 @@ def processar_pagamento(canal, evento, chave_privada):
     dados = evento['dados']
     pedido_id = dados['pedido_id']
     produtos = dados['produtos']
+    total = 0
 
     print(f"Processando pagamento do pedido {pedido_id}...")
+
+    for produto in produtos:
+        total += produto['valor_unitario'] * produto['quantidade']
+
+    print(f"Total do pedido {pedido_id}: R$ {total:.2f}")
 
     # Simulação de processamento de pagamento
     aprovado = random.choice([True, False])
@@ -28,7 +34,7 @@ def processar_pagamento(canal, evento, chave_privada):
     if aprovado:
         print("Pagamento do pedido aprovado.")
 
-        evento_confirmacao = auxi.criar_evento("pagamento.aprovado", {"pedido_id": pedido_id, "produtos": produtos})
+        evento_confirmacao = auxi.criar_evento("pagamento.aprovado", {"pedido_id": pedido_id, "produtos": produtos, "valor_total": total})
 
         rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_confirmacao, chave_privada)
         print(f"Pagamento aprovado: {evento_confirmacao['tipo']} | Routing Key: {evento_confirmacao['tipo']}")
@@ -36,7 +42,7 @@ def processar_pagamento(canal, evento, chave_privada):
     else:
         print("Pagamento do pedido recusado.")
 
-        evento_resposta = auxi.criar_evento("pagamento.recusado", {"pedido_id": pedido_id, "produtos": produtos})
+        evento_resposta = auxi.criar_evento("pagamento.recusado", {"pedido_id": pedido_id, "produtos": produtos, "valor_total": total})
 
         rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_resposta, chave_privada)
         print(f"Pagamento recusado: {evento_resposta['tipo']} | Routing Key: {evento_resposta['tipo']}")

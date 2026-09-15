@@ -90,13 +90,25 @@ def criar_pedido(canal, chave_privada):
         print("\nProduto inexistente.")
         return
 
+    with lock:
+        promocao = next(
+            (
+                p for p in promocoes
+                    if p["produto_id"] == produto_id
+            ), None)
+
+    if promocao:
+        valor_unitario = promocao["valor_promocional"]
+    else:
+        valor_unitario = produto_encontrado["valor"]
+
     pedido_id = proximo_pedido_id
     proximo_pedido_id += 1
 
     pedido = {
         "pedido_id": pedido_id,
         "produtos": [
-            {"produto_id": produto_id, "quantidade": quantidade}
+            {"produto_id": produto_id, "quantidade": quantidade, "valor_unitario": valor_unitario}
         ],
         "status": "criado"
     }
@@ -137,7 +149,7 @@ def consultar_pedido():
                     nome_produto = p["nome"]
                     break
                     
-        print(f"Produto ID: {item['produto_id']} | Nome: {nome_produto} | Quantidade: {item['quantidade']}")
+        print(f"Produto ID: {item['produto_id']} | Nome: {nome_produto} | Quantidade: {item['quantidade']} | Valor: R$ {item['valor_unitario']:.2f}")
 
     print("\n =======================")
 
