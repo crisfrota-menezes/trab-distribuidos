@@ -26,10 +26,14 @@ def criar_canal():
 
     return conexao, canal
 
-def publicar_evento(canal, exchange, evento, chave_privada):
+def publicar_evento(canal, exchange, evento, chave_privada, routing_key=None):
     auxi.assinar_evento(evento, chave_privada)
+
+    if routing_key is None:
+        routing_key = evento["tipo"]
+        
     canal.basic_publish(
         exchange=exchange,
-        routing_key=evento["tipo"],
+        routing_key=routing_key,
         body=auxi.evento_para_json(evento)
     )
