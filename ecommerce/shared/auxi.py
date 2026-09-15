@@ -11,7 +11,7 @@ def criar_evento(tipo, dados):
         'tipo': tipo,
         'dados': dados,
         'timestamp': datetime.now().isoformat(),
-        'assinatura': ""
+        'signature': ""
     }
 
     return evento
@@ -50,16 +50,16 @@ def assinar_evento(evento, chave_privada):
         hashes.SHA256()
     )
 
-    evento['assinatura'] = base64.b64encode(assinatura).decode('utf-8')
+    evento['signature'] = base64.b64encode(assinatura).decode('utf-8')
 
     return evento
 
 def verificar_assinatura(evento, chave_publica):
-    if not evento.get('assinatura'):
+    if not evento.get('signature'):
         return False
 
     try:
-        assinatura = base64.b64decode(evento['assinatura'])
+        assinatura = base64.b64decode(evento['signature'])
 
         hash_evento = gerar_hash(evento)
 
