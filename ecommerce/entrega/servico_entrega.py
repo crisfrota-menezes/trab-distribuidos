@@ -28,6 +28,7 @@ def processar_entrega(canal, evento, chave_privada):
     evento_resposta = auxi.criar_evento("pedido.enviado",{"pedido_id": pedido_id, "produtos": produtos})
 
     rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_resposta, chave_privada)
+    print(f"Evento pedido.enviado publicado para o pedido {pedido_id}.")
 
 def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chave_publica_pagamento):
     evento = auxi.json_para_evento(corpo)

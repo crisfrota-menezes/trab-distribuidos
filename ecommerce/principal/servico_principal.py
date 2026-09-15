@@ -23,15 +23,17 @@ produtos = []
 proximo_pedido_id = 1
 lock = threading.Lock()
 evento_produtos = threading.Event()
+evento_consumidor_pronto = threading.Event()
 
-def solicitar_produtos(canal, chave_privada):
+def solicitar_produtos(canal, chave_privada, exibir=True):
     evento = auxi.criar_evento("produto.consulta", {})
 
     evento_produtos.clear()
     rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada)
 
     if evento_produtos.wait(timeout=3.0):
-        mostrar_produtos()
+        if exibir:
+            mostrar_produtos()
     else:
         print("\nErro: O serviço de Estoque não respondeu a tempo.")
 
@@ -207,7 +209,7 @@ def processar_evento(canal, evento, chave_privada):
             rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_exclusao, chave_privada)
 
             with lock:
-                pedidos["status"] = "excluido"
+                pedidos[pedido_id]["status"] = "excluido"
 
         case "pagamento.aprovado":
             with lock:
@@ -220,11 +222,11 @@ def processar_evento(canal, evento, chave_privada):
             rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_exclusao, chave_privada)
 
             with lock:
-                pedidos["status"] = "excluido"
+                pedidos[pedido_id]["status"] = "excluido"
         
         case "pedido.enviado":
             with lock:
-                pedidos["status"] = "enviado"
+                pedidos[pedido_id]["status"] = "enviado"
 
         case _:
             print("\nEvento não esperado pelo Principal.")
@@ -290,6 +292,8 @@ def iniciar_consumidor(chave_privada, chaves_publicas):
                         receber_evento(ch, method, properties, body, chave_privada, chaves_publicas),
                         auto_ack=False)
 
+    evento_consumidor_pronto.set()
+
     canal.start_consuming()
 
 def menu():
@@ -344,6 +348,10 @@ def main():
 
     thread_consumidor = threading.Thread(target= iniciar_consumidor, args=(chave_privada, chaves_publicas), daemon=True)
     thread_consumidor.start()
+
+    evento_consumidor_pronto.wait()
+
+    solicitar_produtos(canal, chave_privada, False)
 
     interface(canal, chave_privada)
 

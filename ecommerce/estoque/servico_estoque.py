@@ -81,6 +81,7 @@ def enviar_produtos(canal, chave_privada):
     evento = auxi.criar_evento("produto.lista", {"produtos": lista_produtos})
 
     rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada)
+    print(f"Lista de produtos enviada.")
 
 def processar_pedido(canal, evento, chave_privada):
     dados = evento['dados']
@@ -106,37 +107,39 @@ def processar_pedido(canal, evento, chave_privada):
             estoque_disponivel = False
             break
 
-        #Estoque indisponivel
-        if not estoque_disponivel:
-            evento_resposta = auxi.criar_evento("estoque.indisponivel", {"pedido_id": pedido_id, "produtos": produtos_pedido})
-            rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_resposta, chave_privada)
-            return
-
-        #Reservar estoque
-        for item in produtos_pedido:
-            produto_id = item["produto_id"]
-            quantidade_solicitada = item["quantidade"]
-
-            produtos[produto_id]["quantidade"] -= quantidade_solicitada
-
-            print(f"Produto {produto_id}: -{quantidade_solicitada} unidade(s).")
-
-        print("Estoque reservado com sucesso.")
-
-        evento_resposta = auxi.criar_evento("pedido.estoque_ok", {"pedido_id": pedido_id, "produtos": produtos_pedido})
-
+    #Estoque indisponivel
+    if not estoque_disponivel:
+        evento_resposta = auxi.criar_evento("estoque.indisponivel", {"pedido_id": pedido_id, "produtos": produtos_pedido})
         rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_resposta, chave_privada)
+        print(f"Estoque indisponivel para o pedido {pedido_id}.")
+        return
+
+    #Reservar estoque
+    for item in produtos_pedido:
+        produto_id = item["produto_id"]
+        quantidade_solicitada = item["quantidade"]
+
+        produtos[produto_id]["quantidade"] -= quantidade_solicitada
+
+        print(f"Produto {produto_id}: -{quantidade_solicitada} unidade(s).")
+
+    print("Estoque reservado com sucesso.")
+
+    evento_resposta = auxi.criar_evento("pedido.estoque_ok", {"pedido_id": pedido_id, "produtos": produtos_pedido})
+
+    rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_resposta, chave_privada)
+    print(f"Estoque reservado para o pedido {pedido_id}.")
 
 def restaurar_estoque(evento):
     dados = evento["dados"]
     pedido_id = dados["pedido_id"]
-    produtos = dados["produtos"]
+    produtos_pedido = dados["produtos"]
 
     print(f"\nRestaurando estoque do pedido {pedido_id}...")
 
-    for produto in produtos:
-        produto_id = produto["produto_id"]
-        quantidade = produto["quantidade"]
+    for item in produtos_pedido:
+        produto_id = item["produto_id"]
+        quantidade = item["quantidade"]
 
         if produto_id in produtos:
             produtos[produto_id]["quantidade"] += quantidade

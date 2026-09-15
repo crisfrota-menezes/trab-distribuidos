@@ -31,6 +31,7 @@ def processar_pagamento(canal, evento, chave_privada):
         evento_confirmacao = auxi.criar_evento("pagamento.aprovado", {"pedido_id": pedido_id, "produtos": produtos})
 
         rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_confirmacao, chave_privada)
+        print(f"Pagamento aprovado: {evento_confirmacao['tipo']} | Routing Key: {evento_confirmacao['tipo']}")
 
     else:
         print("Pagamento do pedido recusado.")
@@ -38,6 +39,7 @@ def processar_pagamento(canal, evento, chave_privada):
         evento_resposta = auxi.criar_evento("pagamento.recusado", {"pedido_id": pedido_id, "produtos": produtos})
 
         rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_resposta, chave_privada)
+        print(f"Pagamento recusado: {evento_resposta['tipo']} | Routing Key: {evento_resposta['tipo']}")
 
 def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chave_publica_estoque):
     evento = auxi.json_para_evento(corpo)

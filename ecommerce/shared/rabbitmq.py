@@ -33,4 +33,3 @@ def publicar_evento(canal, exchange, evento, chave_privada):
         routing_key=evento["tipo"],
         body=auxi.evento_para_json(evento)
     )
-    print(f"Evento publicado: {evento['tipo']} | Routing Key: {evento['tipo']}")
