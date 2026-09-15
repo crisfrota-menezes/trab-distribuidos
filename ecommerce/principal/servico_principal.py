@@ -11,18 +11,15 @@ import shared.auxi as auxi
 import shared.rabbitmq as rmq
 
 FILA_PRINCIPAL = "fila_principal"
-FILA_PROMOCOES = "fila_promocoes"
 
 CHAVE_PRIVADA = os.path.join(BASE_DIR, "chaves", "privada.pem")
 
 CHAVE_PUBLICA_ESTOQUE = os.path.join(BASE_DIR, "chaves", "publicas", "estoque.pem")
 CHAVE_PUBLICA_PAGAMENTO = os.path.join(BASE_DIR, "chaves", "publicas", "pagamento.pem")
 CHAVE_PUBLICA_ENTREGA = os.path.join(BASE_DIR, "chaves", "publicas", "entrega.pem")
-CHAVE_PUBLICA_PROMOCAO = os.path.join(BASE_DIR, "chaves", "publicas", "promocao.pem")
 
 pedidos = {}
 produtos = []
-promocoes = []
 proximo_pedido_id = 1
 lock = threading.Lock()
 evento_produtos = threading.Event()
@@ -51,14 +48,6 @@ def mostrar_produtos():
         for produto in produtos:
             print(f"ID: {produto['produto_id']} | "f"{produto['nome']} | "f"R$ {produto['valor']:.2f} | "f"Disponível: {produto['quantidade']}")
             
-            promocao = next((
-                p for p in promocoes
-                    if p["produto_id"] == produto["produto_id"]
-            ), None)
-
-            if promocao:
-                print(f"Promoção: R$ {promocao['valor_promocional']:.2f} | Categoria: {promocao['categoria']}")
-
         print("=============================")
 
 def criar_pedido(canal, chave_privada):
@@ -101,25 +90,23 @@ def criar_pedido(canal, chave_privada):
             print("\nQuantidade inválida.")
             continue
 
-        with lock:
-            promocao = next(
-                (
-                    p for p in promocoes
-                        if p["produto_id"] == produto_id
-                ), None)
-
-        if promocao:
-            valor_unitario = promocao["valor_promocional"]
-        else:
-            valor_unitario = produto_encontrado["valor"]
-
         item = {
             "produto_id": produto_id,
             "quantidade": quantidade,
-            "valor_unitario": valor_unitario
+            "valor_unitario": produto_encontrado["valor"]
         }
 
-        itens_pedido.append(item)
+        item_existente = next(
+            (
+                item for item in itens_pedido 
+                if item["produto_id"] == produto_id
+            ), None)
+
+        if item_existente:
+            item_existente["quantidade"] += quantidade
+            item_existente["valor_unitario"] = produto_encontrado["valor"]
+        else:
+            itens_pedido.append(item)
 
     if not itens_pedido:
         print("\nPedido vazio!")
@@ -245,10 +232,6 @@ def processar_evento(canal, evento, chave_privada):
 
             evento_produtos.set()
 
-        case "promocao.criada":
-            with lock:
-                promocoes.append(dados)
-
         case "pedido.estoque_ok":
             pedido_id = dados["pedido_id"]
 
@@ -367,9 +350,6 @@ def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chaves_pub
         case "pedido.enviado":
             chave_publica = chaves_publicas["entrega"]
 
-        case "promocao.criada":
-            chave_publica = chaves_publicas["promocao"]
-
         case _:
             print("\nEvento não esperado pelo Principal.")
             canal.basic_ack(delivery_tag=metodo.delivery_tag)
@@ -389,7 +369,6 @@ def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chaves_pub
 def iniciar_consumidor(chave_privada, chaves_publicas):
     conexao, canal = rmq.criar_canal()
 
-    #Filas do ECOMMERCE
     canal.queue_declare(queue=FILA_PRINCIPAL, durable=True)
 
     canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="produto.lista")
@@ -401,17 +380,9 @@ def iniciar_consumidor(chave_privada, chaves_publicas):
 
     canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="pedido.enviado")
 
-    #Filas de PROMOÇÃO
-    canal.queue_declare(queue=FILA_PROMOCOES, durable=True)
-    canal.queue_bind(exchange=rmq.EXCHANGE_PROMOCAO, queue=FILA_PROMOCOES, routing_key="promocao.categoria.*")
-
     canal.basic_qos(prefetch_count=1)
 
     canal.basic_consume(queue=FILA_PRINCIPAL, on_message_callback=lambda ch, method, properties, body:
-                        receber_evento(ch, method, properties, body, chave_privada, chaves_publicas),
-                        auto_ack=False)
-    
-    canal.basic_consume(queue=FILA_PROMOCOES, on_message_callback=lambda ch, method, properties, body:
                         receber_evento(ch, method, properties, body, chave_privada, chaves_publicas),
                         auto_ack=False)
 
@@ -462,13 +433,11 @@ def main():
     chave_publica_estoque = auxi.carregar_chave_publica(CHAVE_PUBLICA_ESTOQUE)
     chave_publica_pagamento = auxi.carregar_chave_publica(CHAVE_PUBLICA_PAGAMENTO)
     chave_publica_entrega = auxi.carregar_chave_publica(CHAVE_PUBLICA_ENTREGA)
-    chave_publica_promocao = auxi.carregar_chave_publica(CHAVE_PUBLICA_PROMOCAO)
 
     chaves_publicas = {
         "estoque": chave_publica_estoque,
         "pagamento": chave_publica_pagamento,
-        "entrega": chave_publica_entrega,
-        "promocao": chave_publica_promocao
+        "entrega": chave_publica_entrega
     }
 
     thread_consumidor = threading.Thread(target= iniciar_consumidor, args=(chave_privada, chaves_publicas), daemon=True)
