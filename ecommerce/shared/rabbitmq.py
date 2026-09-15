@@ -1,4 +1,5 @@
 import pika
+import shared.auxi as auxi
 
 #centralizando a conexao com o RabbitMQ
 
@@ -24,3 +25,12 @@ def criar_canal():
     canal.exchange_declare(exchange=EXCHANGE_PROMOCAO, exchange_type='topic', durable=True)
 
     return conexao, canal
+
+def publicar_evento(canal, exchange, evento, chave_privada):
+    auxi.assinar_evento(evento, chave_privada)
+    canal.basic_publish(
+        exchange=exchange,
+        routing_key=evento["tipo"],
+        body=auxi.evento_para_json(evento)
+    )
+    print(f"Evento publicado: {evento['tipo']} | Routing Key: {evento['tipo']}")

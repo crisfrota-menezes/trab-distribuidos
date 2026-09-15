@@ -1,7 +1,6 @@
 import os
 import sys
 import threading
-import random
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
@@ -9,7 +8,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 import shared.auxi as auxi
-from shared.rabbitmq import criar_canal, EXCHANGE_ECOMMERCE
+import shared.rabbitmq as rmq
 
 FILA_PRINCIPAL = "fila_principal"
 
@@ -23,24 +22,18 @@ pedidos = {}
 produtos = []
 proximo_pedido_id = 1
 lock = threading.Lock()
-
-def publicar_evento(canal, evento, chave_privada):
-    auxi.assinar_evento(evento, chave_privada)
-
-    canal.basic_publish(
-        exchange=EXCHANGE_ECOMMERCE,
-        routing_key=evento["tipo"],
-        body=auxi.evento_para_json(evento),
-    )
-
-    print(f"Evento publicado: {evento['tipo']}")
+evento_produtos = threading.Event()
 
 def solicitar_produtos(canal, chave_privada):
     evento = auxi.criar_evento("produto.consulta", {})
 
-    publicar_evento(canal, evento, chave_privada)
+    evento_produtos.clear()
+    rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada)
 
-    print("Aguardando lista de produtos...")
+    if evento_produtos.wait(timeout=3.0):
+        mostrar_produtos()
+    else:
+        print("\nErro: O serviço de Estoque não respondeu a tempo.")
 
 def mostrar_produtos():
     with lock:
@@ -65,11 +58,11 @@ def criar_pedido(canal, chave_privada):
         produto_id = int(input("\nDigite o ID do produto: "))
         quantidade = int(input("Digite a quantidade: "))
     except ValueError:
-        print("Digite valores numéricos válidos.")
+        print("\nDigite valores numéricos válidos.")
         return
 
     if quantidade <= 0:
-        print("Quantidade inválida.")
+        print("\nQuantidade inválida.")
         return
 
     produto_encontrado = None
@@ -81,7 +74,7 @@ def criar_pedido(canal, chave_privada):
                 break
 
     if produto_encontrado is None:
-        print("Produto inexistente.")
+        print("\nProduto inexistente.")
         return
 
     pedido_id = proximo_pedido_id
@@ -100,7 +93,7 @@ def criar_pedido(canal, chave_privada):
 
     evento = auxi.criar_evento("pedido.criado", pedido)
 
-    publicar_evento(canal, evento, chave_privada)
+    rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada)
 
     print(f"\nPedido {pedido_id} criado.")
     print(f"Status: {pedido['status']}")
@@ -109,64 +102,72 @@ def consultar_pedido():
     try:
         pedido_id = int(input("\nDigite o ID do pedido: "))
     except ValueError:
-        print("ID inválido.")
+        print("\nID inválido.")
         return
 
     with lock:
         pedido = pedidos.get(pedido_id)
 
     if pedido is None:
-        print("Pedido não encontrado.")
+        print("\nPedido não encontrado.")
         return
 
     print("\n ======== PEDIDO ========")
-    print(f"ID: {pedido['pedido_id']} |" f"Status: {pedido['status']}")
+    print(f"ID: {pedido['pedido_id']} | " f"Status: {pedido['status']}")
     print("Produtos:")
-    for produto in pedido["produtos"]:
-        print(f"Poduto ID: {produto['produto_id']} | " f"Quantidade: {produto['quantidade']}")
+
+    for item in pedido["produtos"]:
+        nome_produto = "Desconhecido"
+        with lock:
+            for p in produtos:
+                if p["produto_id"] == item["produto_id"]:
+                    nome_produto = p["nome"]
+                    break
+                    
+        print(f"Produto ID: {item['produto_id']} | Nome: {nome_produto} | Quantidade: {item['quantidade']}")
+
     print("\n =======================")
 
 def consultar_status():
     try:
         pedido_id = int(input("\nDigite o ID do pedido: "))
     except ValueError:
-        print("ID inválido.")
+        print("\nID inválido.")
         return
 
     with lock:
         pedido = pedidos.get(pedido_id)
 
     if pedido is None:
-        print("Pedido não encontrado.")
+        print("\nPedido não encontrado.")
         return
 
     print("\n ======== PEDIDO ========")
-    print(f"ID: {pedido['pedido_id']} |" f"Status: {pedido['status']}")
+    print(f"ID: {pedido['pedido_id']} | " f"Status: {pedido['status']}")
 
 def excluir_pedido(canal, chave_privada):
     try:
         pedido_id = int(input("\nDigite o ID do pedido: "))
     except ValueError:
-        print("ID inválido.")
+        print("\nID inválido.")
         return
 
     with lock:
        pedido = pedidos.get(pedido_id)
        
     if pedido is None:
-        print("Pedido não encontrado.")
+        print("\nPedido não encontrado.")
         return        
 
     if pedido["status"] in ["excluido", "enviado"]:
-        print("Esse pedido não pode ser excluído.")
+        print("\nEsse pedido não pode ser excluído.")
         return
 
     evento = auxi.criar_evento("pedido.excluido", {"pedido_id": pedido_id, "produtos": pedido["produtos"]})
-    publicar_evento(canal, evento, chave_privada)
+    rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada)
 
     with lock:
         pedidos[pedido_id]["status"] = "excluido"
-        print(f"Pedido {pedido_id} excluído.")
 
 def processar_evento(canal, evento, chave_privada):
     global produtos
@@ -176,59 +177,57 @@ def processar_evento(canal, evento, chave_privada):
     if tipo == "produto.lista":
         with lock:
             produtos = dados["produtos"]
+        evento_produtos.set()
         return
 
     pedido_id = dados["pedido_id"]
 
     if pedido_id not in pedidos:
-        print(f"Pedido {pedido_id} não encontrado.")
+        print(f"\nPedido {pedido_id} não encontrado.")
         return
 
     pedido = pedidos[pedido_id]
 
     with lock:
         if pedido_id not in pedidos:
-            print(f"Pedido {pedido_id} não encontrado.")
+            print(f"\nPedido {pedido_id} não encontrado.")
             return
 
         pedido = pedidos[pedido_id]
 
-    if tipo == "pedido.estoque_ok":
-        with lock:
-            pedidos[pedido_id]["status"] = ("estoque_ok")
+    match tipo:
+        case "pedido.estoque_ok":
+            with lock:
+                pedidos[pedido_id]["status"] = ("estoque_ok")
 
-        print("Estoque reservado com sucesso.")
-        print("Status atualizado para: estoque_ok")
+        case "estoque.indisponivel":
+            print("\nEstoque indisponível. Pedido será excluído.")
 
-    elif tipo == "estoque.indisponivel":
-        print("Estoque indisponível. Pedido será excluído.")
+            evento_exclusao = auxi.criar_evento("pedido.excluido", {"pedido_id": pedido_id, "produtos": pedido["produtos"]})
+            rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_exclusao, chave_privada)
 
-        evento_exclusao = auxi.criar_evento("pedido.excluido", {"pedido_id": pedido_id, "produtos": pedido["produtos"]})
-        publicar_evento(canal, evento_exclusao, chave_privada)
+            with lock:
+                pedidos["status"] = "excluido"
 
-        with lock:
-            pedidos["status"] = "excluido"
+        case "pagamento.aprovado":
+            with lock:
+                pedidos[pedido_id]["status"] = ("pagamento_aprovado")
 
-    elif tipo == "pagamento.aprovado":
-        with lock:
-            pedidos[pedido_id]["status"] = ("pagamento_aprovado")
-
-        print(f"Pagamento aprovado. Pedido: {pedido_id}")
-
-    elif tipo == "pagamento.recusado":
-        print("Pagamento recusado. Pedido será excluído.")
+        case "pagamento.recusado":
+            print("\nPagamento recusado. Pedido excluído.")
         
-        evento_exclusao = auxi.criar_evento("pedido.excluido", {"pedido_id": pedido_id, "produtos": pedido["produtos"]})
-        publicar_evento(canal, evento_exclusao, chave_privada)
+            evento_exclusao = auxi.criar_evento("pedido.excluido", {"pedido_id": pedido_id, "produtos": pedido["produtos"]})
+            rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_exclusao, chave_privada)
 
-        with lock:
-            pedidos["status"] = "excluido"
+            with lock:
+                pedidos["status"] = "excluido"
         
-    elif tipo == "pedido.enviado":
-        with lock:
-            pedidos["status"] = "enviado"
+        case "pedido.enviado":
+            with lock:
+                pedidos["status"] = "enviado"
 
-        print(f"Pedido {pedido_id} enviado!")
+        case _:
+            print("\nEvento não esperado pelo Principal.")
 
 def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chaves_publicas):
     evento = auxi.json_para_evento(corpo)
@@ -236,51 +235,54 @@ def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chaves_pub
     tipo = evento["tipo"]
 
     #Descobre qual chave publica usar
-    if tipo == "produto.lista":
-        chave_publica = chaves_publicas["estoque"]
+    match tipo:
+        case "produto.lista":
+            chave_publica = chaves_publicas["estoque"]
 
-    if tipo == ["pedido.estoque_ok", "estoque.indisponivel"]:
-        chave_publica = chaves_publicas["estoque"]
+        case "pedido.estoque_ok":
+            chave_publica = chaves_publicas["estoque"]
 
-    elif tipo == ["pagamento.aprovado", "pagamento.recusado"]:
-        chave_publica = chaves_publicas["pagamento"]
+        case "estoque.indisponivel":
+            chave_publica = chaves_publicas["estoque"]
 
-    elif tipo == "pedido.enviado":
-        chave_publica = chaves_publicas["entrega"]
+        case "pagamento.aprovado":
+            chave_publica = chaves_publicas["pagamento"]
 
-    else:
-        print("Evento não esperado pelo Principal.")
-        canal.basic_ack(delivery_tag=metodo.delivery_tag)
-        return
+        case "pagamento.recusado":
+            chave_publica = chaves_publicas["pagamento"]
+
+        case "pedido.enviado":
+            chave_publica = chaves_publicas["entrega"]
+
+        case _:
+            print("\nEvento não esperado pelo Principal.")
+            canal.basic_ack(delivery_tag=metodo.delivery_tag)
+            return
 
     assinatura_valida = auxi.verificar_assinatura(evento, chave_publica)
 
     if not assinatura_valida:
-        print("ERRO: assinatura inválida. Evento descartado.")
-
         canal.basic_ack(delivery_tag=metodo.delivery_tag)
 
         return
-
-    print("Assinatura válida")
 
     processar_evento(canal, evento, chave_privada)
 
     canal.basic_ack(delivery_tag=metodo.delivery_tag)
 
 def iniciar_consumidor(chave_privada, chaves_publicas):
-    conexao, canal = criar_canal()
+    conexao, canal = rmq.criar_canal()
 
     canal.queue_declare(queue=FILA_PRINCIPAL, durable=True)
 
-    canal.queue_bind(exchange=EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="produto.lista")
-    canal.queue_bind(exchange=EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="pedido.estoque_ok")
-    canal.queue_bind(exchange=EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="estoque.indisponivel")
+    canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="produto.lista")
+    canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="pedido.estoque_ok")
+    canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="estoque.indisponivel")
 
-    canal.queue_bind(exchange=EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="pagamento.aprovado")
-    canal.queue_bind(exchange=EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="pagamento.recusado")
+    canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="pagamento.aprovado")
+    canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="pagamento.recusado")
 
-    canal.queue_bind(exchange=EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="pedido.enviado")
+    canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="pedido.enviado")
 
     canal.basic_qos(prefetch_count=1)
 
@@ -307,24 +309,25 @@ def interface(canal, chave_privada):
         menu()
         opcao = input("Escolha uma opção: ")
 
-        if opcao == "1": 
-            solicitar_produtos( canal, chave_privada ) 
-        elif opcao == "2":
-            criar_pedido( canal, chave_privada ) 
-        elif opcao == "3": 
-            consultar_pedido() 
-        elif opcao == "4": 
-            consultar_status() 
-        elif opcao == "5": 
-            excluir_pedido( canal, chave_privada ) 
-        elif opcao == "0": 
-            print( "\nEncerrando Principal..." ) 
-            break
-        else:
-            print("Opção inválida.")
+        match opcao:
+            case "1": 
+                solicitar_produtos( canal, chave_privada )
+            case "2":
+                criar_pedido( canal, chave_privada ) 
+            case "3": 
+                consultar_pedido() 
+            case "4": 
+                consultar_status() 
+            case "5": 
+                excluir_pedido( canal, chave_privada ) 
+            case "0": 
+                print( "\nEncerrando Principal..." ) 
+                break
+            case _: 
+                print("\nOpção inválida.")
 
 def main():
-    conexao, canal = criar_canal()
+    conexao, canal = rmq.criar_canal()
     print("Conexão com RabbitMQ estabelecida.")
 
     chave_privada = auxi.carregar_chave_privada(CHAVE_PRIVADA)
@@ -339,7 +342,7 @@ def main():
         "entrega": chave_publica_entrega
     }
 
-    thread_consumidor = threading.Thread(target= iniciar_consumidor, arg=(chave_privada, chaves_publicas), daemon=True)
+    thread_consumidor = threading.Thread(target= iniciar_consumidor, args=(chave_privada, chaves_publicas), daemon=True)
     thread_consumidor.start()
 
     interface(canal, chave_privada)

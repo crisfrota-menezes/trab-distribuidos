@@ -8,25 +8,12 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 import random
-from shared.rabbitmq import criar_canal, EXCHANGE_ECOMMERCE
 import shared.auxi as auxi
+import shared.rabbitmq as rmq
 
 FILA_PAGAMENTO = "fila_pagamento"
 CHAVE_PRIVADA = os.path.join(BASE_DIR, "chaves", "privada.pem")
 CHAVE_PUBLICA_ESTOQUE = os.path.join(BASE_DIR, "chaves", "publicas", "estoque.pem")
-
-def publicar_evento(canal, evento, chave_privada):
-    auxi.assinar_evento(evento, chave_privada)
-
-    canal.basic_publish(
-        exchange=EXCHANGE_ECOMMERCE,
-        routing_key=evento['tipo'],
-        body=auxi.evento_para_json(evento),
-    )
-
-    print(f"Evento publicado: {evento['tipo']}")
-    print(f"Routing Key: {evento['tipo']}")
-    print(f"Pedido: {evento['dados']['pedido_id']}")
 
 def processar_pagamento(canal, evento, chave_privada):
     dados = evento['dados']
@@ -43,14 +30,14 @@ def processar_pagamento(canal, evento, chave_privada):
 
         evento_confirmacao = auxi.criar_evento("pagamento.aprovado", {"pedido_id": pedido_id, "produtos": produtos})
 
-        publicar_evento(canal, evento_confirmacao, chave_privada)
+        rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_confirmacao, chave_privada)
 
     else:
         print("Pagamento do pedido recusado.")
 
         evento_resposta = auxi.criar_evento("pagamento.recusado", {"pedido_id": pedido_id, "produtos": produtos})
 
-        publicar_evento(canal, evento_resposta, chave_privada)
+        rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_resposta, chave_privada)
 
 def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chave_publica_estoque):
     evento = auxi.json_para_evento(corpo)
@@ -75,13 +62,12 @@ def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chave_publ
     canal.basic_ack(delivery_tag=metodo.delivery_tag)
 
 def main():
-    conexao, canal = criar_canal()
-
+    conexao, canal = rmq.criar_canal()
     print("Conexão com RabbitMQ estabelecida.")
 
     canal.queue_declare(queue=FILA_PAGAMENTO, durable=True)
 
-    canal.queue_bind(exchange=EXCHANGE_ECOMMERCE, queue=FILA_PAGAMENTO, routing_key="pedido.estoque_ok")
+    canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PAGAMENTO, routing_key="pedido.estoque_ok")
 
     print("Fila criada:", FILA_PAGAMENTO)
 
