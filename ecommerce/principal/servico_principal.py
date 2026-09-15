@@ -67,49 +67,70 @@ def criar_pedido(canal, chave_privada):
 
     if not produtos:
         return
-    try:
-        produto_id = int(input("\nDigite o ID do produto: "))
-        quantidade = int(input("Digite a quantidade: "))
-    except ValueError:
-        print("\nDigite valores numéricos válidos.")
+
+    itens_pedido = []
+    
+    while True: 
+        try: 
+            produto_id = int( input("\nDigite o ID do produto (0 para finalizar): ") ) 
+        except ValueError: 
+            print("\nDigite um valor numérico válido.") 
+            continue 
+        
+        if produto_id == 0: break
+
+        produto_encontrado = None
+
+        with lock:
+            for produto in produtos:
+                if produto["produto_id"] == produto_id:
+                    produto_encontrado = produto
+                    break
+
+        if produto_encontrado is None:
+            print("\nProduto inexistente.")
+            continue
+            
+        try: 
+            quantidade = int(input("Digite a quantidade: ")) 
+        except ValueError: 
+            print("\nDigite um valor numérico válido.") 
+            continue
+
+        if quantidade <= 0:
+            print("\nQuantidade inválida.")
+            continue
+
+        with lock:
+            promocao = next(
+                (
+                    p for p in promocoes
+                        if p["produto_id"] == produto_id
+                ), None)
+
+        if promocao:
+            valor_unitario = promocao["valor_promocional"]
+        else:
+            valor_unitario = produto_encontrado["valor"]
+
+        item = {
+            "produto_id": produto_id,
+            "quantidade": quantidade,
+            "valor_unitario": valor_unitario
+        }
+
+        itens_pedido.append(item)
+
+    if not itens_pedido:
+        print("\nPedido vazio!")
         return
-
-    if quantidade <= 0:
-        print("\nQuantidade inválida.")
-        return
-
-    produto_encontrado = None
-
-    with lock:
-        for produto in produtos:
-            if produto["produto_id"] == produto_id:
-                produto_encontrado = produto
-                break
-
-    if produto_encontrado is None:
-        print("\nProduto inexistente.")
-        return
-
-    with lock:
-        promocao = next(
-            (
-                p for p in promocoes
-                    if p["produto_id"] == produto_id
-            ), None)
-
-    if promocao:
-        valor_unitario = promocao["valor_promocional"]
-    else:
-        valor_unitario = produto_encontrado["valor"]
 
     pedido_id = proximo_pedido_id
     proximo_pedido_id += 1
 
     pedido = {
         "pedido_id": pedido_id,
-        "produtos": [
-            {"produto_id": produto_id, "quantidade": quantidade, "valor_unitario": valor_unitario}
-        ],
+        "produtos": itens_pedido,
         "status": "criado"
     }
 
@@ -122,6 +143,16 @@ def criar_pedido(canal, chave_privada):
 
     print(f"\nPedido {pedido_id} criado.")
     print(f"Status: {pedido['status']}")
+
+    print("Produtos do pedido:") 
+    total = 0 
+    
+    for item in itens_pedido: 
+        subtotal = item["quantidade"] * item["valor_unitario"] 
+        total += subtotal 
+        print( f"Produto ID: {item['produto_id']} | " f"Quantidade: {item['quantidade']} | " f"Valor unitário: R$ {item['valor_unitario']:.2f} | " f"Subtotal: R$ {subtotal:.2f}" )
+
+    print(f"Valor total: R$ {total:.2f}")
 
 def consultar_pedido():
     try:
@@ -141,6 +172,8 @@ def consultar_pedido():
     print(f"ID: {pedido['pedido_id']} | " f"Status: {pedido['status']}")
     print("Produtos:")
 
+    total = 0
+
     for item in pedido["produtos"]:
         nome_produto = "Desconhecido"
         with lock:
@@ -150,6 +183,10 @@ def consultar_pedido():
                     break
                     
         print(f"Produto ID: {item['produto_id']} | Nome: {nome_produto} | Quantidade: {item['quantidade']} | Valor: R$ {item['valor_unitario']:.2f}")
+        print(f"Subtotal: R$ {item['quantidade'] * item['valor_unitario']:.2f}")
+        total += item['quantidade'] * item['valor_unitario']
+
+    print(f"Valor total: R$ {total:.2f}")
 
     print("\n =======================")
 
