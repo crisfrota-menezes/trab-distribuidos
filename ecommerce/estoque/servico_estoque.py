@@ -1,5 +1,8 @@
 import os
 import sys
+from fastapi import FastAPI
+import uvicorn
+import threading
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
@@ -66,22 +69,7 @@ produtos = {
     }
 }
 
-#Enviar lista dos produtos
-def enviar_produtos(canal, chave_privada):
-    lista_produtos = []
-
-    for produto in produtos.values():
-        lista_produtos.append({
-            "produto_id": produto["produto_id"],
-            "nome": produto["nome"],
-            "valor": produto["valor"],
-            "quantidade": produto["quantidade"]
-        })
-
-    evento = auxi.criar_evento("produto.lista", {"produtos": lista_produtos})
-
-    rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada)
-    print(f"Lista de produtos enviada.")
+app = FastAPI()
 
 def processar_pedido(canal, evento, chave_privada):
     dados = evento['dados']
@@ -168,9 +156,6 @@ def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chave_publ
     match tipo:
         case "pedido.criado":
             processar_pedido(canal, evento, chave_privada)
-        case "produto.consulta":
-            print("Consulta de produtos recebida.")
-            enviar_produtos(canal, chave_privada)
         case "pedido.excluido":
             restaurar_estoque(evento)
         case _:
@@ -178,7 +163,7 @@ def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chave_publ
 
     canal.basic_ack(delivery_tag=metodo.delivery_tag)
 
-def main():
+def iniciar_consumidor():
     conexao, canal = rmq.criar_canal()
     print("Conexão com RabbitMQ estabelecida.")
 
@@ -187,8 +172,6 @@ def main():
     canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_ESTOQUE, routing_key="pedido.criado")
 
     canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_ESTOQUE, routing_key="pedido.excluido")
-
-    canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_ESTOQUE, routing_key="produto.consulta")
 
     print(f"Fila '{FILA_ESTOQUE}' vinculada à exchange '{rmq.EXCHANGE_ECOMMERCE}'.")
 
@@ -210,5 +193,14 @@ def main():
 
     canal.start_consuming()
 
+@app.on_event("startup")
+def startup_event():
+    t = threading.Thread(target=iniciar_consumidor, daemon=True)
+    t.start()
+
+@app.get("/produtos")
+def listar_produtos():
+    return list(produtos.values())
+
 if __name__ == "__main__":
-    main()
+    uvicorn.run(app, host="127.0.0.1", port=8001)
