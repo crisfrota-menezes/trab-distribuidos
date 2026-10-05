@@ -1,5 +1,9 @@
 import os
 import sys
+import httpx
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 import threading
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -25,17 +29,15 @@ lock = threading.Lock()
 evento_produtos = threading.Event()
 evento_consumidor_pronto = threading.Event()
 
-def solicitar_produtos(canal, chave_privada, exibir=True):
-    evento = auxi.criar_evento("produto.consulta", {})
+app = FastAPI()
 
-    evento_produtos.clear()
-    rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada)
-
-    if evento_produtos.wait(timeout=3.0):
-        if exibir:
-            mostrar_produtos()
-    else:
-        print("\nErro: O serviço de Estoque não respondeu a tempo.")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def mostrar_produtos():
     with lock:
@@ -390,6 +392,26 @@ def iniciar_consumidor(chave_privada, chaves_publicas):
 
     canal.start_consuming()
 
+@app.get("/produtos")
+async def consulta_produtos():
+    url = "http://localhost:8001/produtos"
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(
+                status_code=exc.response.status_code, 
+                detail="Erro ao comunicar com o outro serviço"
+            )
+        except httpx.RequestError:
+            raise HTTPException(
+                status_code=503, 
+                detail="Serviço externo indisponível"
+            )
+
 def menu():
     print("\n=============================================")
     print("          E-COMMERCE MONSTER ENERGY            ")
@@ -424,7 +446,7 @@ def interface(canal, chave_privada):
             case _: 
                 print("\nOpção inválida.")
 
-def main():
+def iniciar():
     conexao, canal = rmq.criar_canal()
     print("Conexão com RabbitMQ estabelecida.")
 
@@ -452,4 +474,4 @@ def main():
     conexao.close()
 
 if __name__ == "__main__":
-    main()
+    uvicorn.run(app, host="127.0.0.1", port=8000)
