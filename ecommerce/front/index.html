@@ -1,29 +1,139 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monster Ecommerce</title>
+    <meta name="description" content="Monster Energy E-Commerce - Catálogo de bebidas e gerenciamento de pedidos.">
+    <title>Monster Energy E-Commerce</title>
+    <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
-    <div class="card">
-        <h2>Catálogo de Produtos (REST)</h2>
-        <button onclick="carregarProdutos()">Carregar / Atualizar Produtos</button>
-        
-        <table id="tabela-produtos">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Nome</th>
-                    <th>Preço (R$)</th>
-                    <th>Estoque</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td colspan="4">Clique no botão acima para carregar o catálogo.</td></tr>
-            </tbody>
-        </table>
-    </div>
-    <script src="script.js"></script>
+    <header class="header">
+        <div class="container header-content">
+            <div class="logo" id="logo-header">
+                <img src="logo.png" alt="Logo Monster Energy">
+                <span class="logo-text">MONSTER <span class="highlight">ENERGY</span></span>
+            </div>
+
+            <nav class="header-nav">
+                <div class="status-dot-container" id="status-pedidos">
+                    <span class="dot dot-empty" id="dot-indicador"></span>
+                    <span id="status-texto">Não há pedidos</span>
+                </div>
+
+                <button type="button" id="btn-nav-pedidos" class="btn-nav-pedidos" disabled>
+                    <span>Consultar Pedidos</span>
+                    <span id="badge-pedidos-count" class="pedidos-badge hidden">0</span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container main-content">
+        <section id="tela-catalogo" class="tela">
+            <div class="section-topbar">
+                <div>
+                    <h1 class="section-title">Catálogo de Bebidas</h1>
+                    <p class="section-subtitle">Escolha um produto para adicionar ao seu pedido</p>
+                </div>
+
+                <div id="indicador-pedido-topo" class="indicador-pedido hidden">
+                    <span class="indicador-icone">🛒</span>
+                    <div class="indicador-info">
+                        <span id="indicador-qtd">0 itens</span>
+                        <strong id="indicador-total">R$ 0,00</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div id="grid-produtos" class="products-grid">
+                <div class="loading-state">Carregando catálogo de produtos...</div>
+            </div>
+
+            <div id="painel-pedido-andamento" class="panel-pedido-andamento hidden">
+                <div class="panel-header">
+                    <div class="panel-header-title">
+                        <h3>Itens no seu Pedido Atual</h3>
+                        <span id="badge-total-itens-andamento" class="tag-badge">0 itens</span>
+                    </div>
+                    <button type="button" id="btn-limpar-pedido" class="btn-link-danger">Limpar Pedido</button>
+                </div>
+
+                <ul id="lista-itens-andamento" class="itens-andamento-list">
+                </ul>
+
+                <div class="panel-footer">
+                    <div class="subtotal-info">
+                        <span>Total do Pedido:</span>
+                        <strong id="total-pedido-andamento" class="total-destaque">R$ 0,00</strong>
+                    </div>
+                    <button type="button" id="btn-finalizar-pedido-resumo" class="btn btn-primary">
+                        Finalizar Pedido
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section id="tela-adicionar-pedido" class="tela hidden">
+            <div class="modal-card">
+                <button type="button" id="btn-voltar-catalogo-1" class="btn-voltar">
+                    ← Voltar ao Catálogo
+                </button>
+
+                <div class="produto-detalhe-header">
+                    <h2 id="detalhe-produto-nome" class="detalhe-titulo">Monster Tradicional</h2>
+                    <div class="detalhe-preco-box">
+                        <span class="detalhe-preco-rotulo">Preço Unitário:</span>
+                        <strong id="detalhe-produto-preco" class="detalhe-preco">R$ 12,00</strong>
+                    </div>
+                    <p id="detalhe-produto-estoque" class="detalhe-estoque">Estoque disponível: 30 unidades</p>
+                </div>
+
+                <div class="detalhe-quantidade-box">
+                    <label for="input-qtd-selecionada" class="qtd-label">Selecione a Quantidade:</label>
+                    <div class="qtd-controle">
+                        <button type="button" id="btn-diminuir-qtd" class="btn-qtd">−</button>
+                        <input type="number" id="input-qtd-selecionada" class="input-qtd" value="1" min="1" max="1" readonly>
+                        <button type="button" id="btn-aumentar-qtd" class="btn-qtd">+</button>
+                    </div>
+
+                    <div class="subtotal-calculado">
+                        <span>Subtotal deste item:</span>
+                        <strong id="detalhe-subtotal-item" class="subtotal-valor">R$ 12,00</strong>
+                    </div>
+                </div>
+
+                <div class="detalhe-acoes">
+                    <button type="button" id="btn-acao-adicionar" class="btn btn-secondary">
+                        + Adicionar ao Pedido
+                    </button>
+                    <button type="button" id="btn-acao-finalizar" class="btn btn-primary">
+                        Finalizar Pedido
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section id="tela-consultar-pedidos" class="tela hidden">
+            <div class="section-topbar">
+                <div>
+                    <h1 class="section-title">Pedidos Realizados</h1>
+                    <p class="section-subtitle">Acompanhe seus pedidos finalizados e histórico</p>
+                </div>
+
+                <button type="button" id="btn-voltar-catalogo-2" class="btn btn-secondary btn-compact">
+                    ← Voltar ao Catálogo
+                </button>
+            </div>
+
+            <div id="container-pedidos-historico" class="pedidos-historico-container">
+            </div>
+        </section>
+    </main>
+
+    <script src="script.js?v=3" defer></script>
 </body>
+
 </html>
