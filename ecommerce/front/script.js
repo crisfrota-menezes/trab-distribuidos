@@ -1,6 +1,8 @@
 const API_URL = window.location.hostname.includes("github.dev")
     ? `https://${window.location.hostname.replace("-3000.", "-8000.")}`
-    : "http://127.0.0.1:8000";
+    : "https://humble-goldfish-qjxx6w4rp662x6xx-8000.app.github.dev";
+
+const API_URL_PRINCIPAL = "https://humble-goldfish-qjxx6w4rp662x6xx-8000.app.github.dev"
 
 let produtosCatalogo = [];
 let pedidoAtual = [];
@@ -247,36 +249,67 @@ btnLimparPedido.addEventListener("click", () => {
     }
 });
 
-function finalizarPedido() {
+async function finalizarPedido() {
     if (pedidoAtual.length === 0) return;
 
-    const novoId = pedidosFinalizados.length + 1;
-    const valorTotal = pedidoAtual.reduce((acc, item) => acc + (item.valor * item.quantidade), 0);
-    const dataHora = new Date().toLocaleString("pt-BR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit"
-    });
-
-    const pedidoSalvo = {
-        id: novoId,
-        data: dataHora,
-        itens: [...pedidoAtual],
-        total: valorTotal,
-        status: "Aguardando Pagamento"
+    const payload = {
+        produtos: pedidoAtual.map(item => ({
+            produto_id: item.produto_id || item.id,
+            quantidade: item.quantidade
+        }))
     };
 
-    pedidosFinalizados.unshift(pedidoSalvo);
-    salvarHistoricoLocalStorage();
+    try {
+        const response = await fetch(`${API_URL_PRINCIPAL}/pedidos`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
 
-    pedidoAtual = [];
-    produtoSelecionado = null;
-    atualizarUIPedidoAtual();
+        if (!response.ok) {
+            const erroData = await response.json().catch(() => ({}));
+            throw new Error(erroData.detail || "Falha ao registrar pedido no servidor.");
+        }
 
-    atualizarBotaoConsultarPedidos();
-    navegarPara("tela-catalogo");
+        const resultado = await response.json();
+        
+        const novoId = resultado.pedido_id;
+        const valorTotal = pedidoAtual.reduce((acc, item) => acc + (item.valor * item.quantidade), 0);
+        const dataHora = new Date().toLocaleString("pt-BR", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit"
+        });
+
+        const pedidoSalvo = {
+            id: novoId,
+            data: dataHora,
+            itens: [...pedidoAtual],
+            total: valorTotal,
+            status: "Aguardando Pagamento"
+        };
+
+        pedidosFinalizados.unshift(pedidoSalvo);
+        salvarHistoricoLocalStorage();
+
+        pedidoAtual = [];
+        produtoSelecionado = null;
+        
+        atualizarUIPedidoAtual();
+
+        atualizarBotaoConsultarPedidos();
+
+        alert('Pedido Criado!')
+
+        navegarPara("tela-catalogo");
+    } catch (error) {
+        console.error("Erro ao finalizar pedido:", error);
+        alert(`Erro ao enviar pedido: ${error.message}`);
+    }
 }
 
 function atualizarBotaoConsultarPedidos() {

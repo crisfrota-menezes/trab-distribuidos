@@ -1,13 +1,14 @@
 import os
 import sys
-import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import threading
+import httpx
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
+
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
@@ -17,6 +18,7 @@ import shared.rabbitmq as rmq
 FILA_PRINCIPAL = "fila_principal"
 
 CHAVE_PRIVADA = os.path.join(BASE_DIR, "chaves", "privada.pem")
+chave_privada_obj = auxi.carregar_chave_privada(CHAVE_PRIVADA)
 
 CHAVE_PUBLICA_ESTOQUE = os.path.join(BASE_DIR, "chaves", "publicas", "estoque.pem")
 CHAVE_PUBLICA_PAGAMENTO = os.path.join(BASE_DIR, "chaves", "publicas", "pagamento.pem")
@@ -51,97 +53,6 @@ def mostrar_produtos():
             print(f"ID: {produto['produto_id']} | "f"{produto['nome']} | "f"R$ {produto['valor']:.2f} | "f"Disponível: {produto['quantidade']}")
             
         print("=============================")
-
-def criar_pedido(canal, chave_privada):
-    global proximo_pedido_id
-    mostrar_produtos()
-
-    if not produtos:
-        return
-
-    itens_pedido = []
-    
-    while True: 
-        try: 
-            produto_id = int( input("\nDigite o ID do produto (0 para finalizar): ") ) 
-        except ValueError: 
-            print("\nDigite um valor numérico válido.") 
-            continue 
-        
-        if produto_id == 0: break
-
-        produto_encontrado = None
-
-        with lock:
-            for produto in produtos:
-                if produto["produto_id"] == produto_id:
-                    produto_encontrado = produto
-                    break
-
-        if produto_encontrado is None:
-            print("\nProduto inexistente.")
-            continue
-            
-        try: 
-            quantidade = int(input("Digite a quantidade: ")) 
-        except ValueError: 
-            print("\nDigite um valor numérico válido.") 
-            continue
-
-        if quantidade <= 0:
-            print("\nQuantidade inválida.")
-            continue
-
-        item = {
-            "produto_id": produto_id,
-            "quantidade": quantidade,
-            "valor_unitario": produto_encontrado["valor"]
-        }
-
-        item_existente = next(
-            (
-                item for item in itens_pedido 
-                if item["produto_id"] == produto_id
-            ), None)
-
-        if item_existente:
-            item_existente["quantidade"] += quantidade
-            item_existente["valor_unitario"] = produto_encontrado["valor"]
-        else:
-            itens_pedido.append(item)
-
-    if not itens_pedido:
-        print("\nPedido vazio!")
-        return
-
-    pedido_id = proximo_pedido_id
-    proximo_pedido_id += 1
-
-    pedido = {
-        "pedido_id": pedido_id,
-        "produtos": itens_pedido,
-        "status": "criado"
-    }
-
-    with lock:
-        pedidos[pedido_id] = pedido
-
-    evento = auxi.criar_evento("pedido.criado", pedido)
-
-    rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada)
-
-    print(f"\nPedido {pedido_id} criado.")
-    print(f"Status: {pedido['status']}")
-
-    print("Produtos do pedido:") 
-    total = 0 
-    
-    for item in itens_pedido: 
-        subtotal = item["quantidade"] * item["valor_unitario"] 
-        total += subtotal 
-        print( f"Produto ID: {item['produto_id']} | " f"Quantidade: {item['quantidade']} | " f"Valor unitário: R$ {item['valor_unitario']:.2f} | " f"Subtotal: R$ {subtotal:.2f}" )
-
-    print(f"Valor total: R$ {total:.2f}")
 
 def consultar_pedido():
     try:
@@ -411,6 +322,42 @@ async def consulta_produtos():
                 status_code=503, 
                 detail="Serviço externo indisponível"
             )
+
+@app.post("/pedidos")
+async def criar_pedido(request: Request):
+    dados = await request.json()
+    produtos = dados.get("produtos", [])
+
+    if not produtos:
+        raise HTTPException(status_code=400, detail="O pedido não possui produtos.")
+
+    global proximo_pedido_id
+
+    pedido_id = proximo_pedido_id
+    proximo_pedido_id += 1
+
+    pedido = {
+        "pedido_id": pedido_id,
+        "produtos": produtos
+    }
+
+    with lock:
+        pedidos[pedido_id] = pedido
+
+    evento = auxi.criar_evento("pedido.criado", pedido)
+
+    try:
+        conexao, canal = rmq.criar_canal()
+        rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada_obj)
+        conexao.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro no RabbitMQ: {str(e)}")
+
+    return {
+        "status": "sucesso",
+        "pedido_id": pedido_id,
+        "mensagem": "Pedido criado e enviado para processamento."
+    }
 
 def menu():
     print("\n=============================================")
