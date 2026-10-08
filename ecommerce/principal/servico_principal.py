@@ -18,7 +18,6 @@ import shared.rabbitmq as rmq
 FILA_PRINCIPAL = "fila_principal"
 
 CHAVE_PRIVADA = os.path.join(BASE_DIR, "chaves", "privada.pem")
-chave_privada_obj = auxi.carregar_chave_privada(CHAVE_PRIVADA)
 
 CHAVE_PUBLICA_ESTOQUE = os.path.join(BASE_DIR, "chaves", "publicas", "estoque.pem")
 CHAVE_PUBLICA_PAGAMENTO = os.path.join(BASE_DIR, "chaves", "publicas", "pagamento.pem")
@@ -346,9 +345,11 @@ async def criar_pedido(request: Request):
 
     evento = auxi.criar_evento("pedido.criado", pedido)
 
+    chave_privada = auxi.carregar_chave_privada(CHAVE_PRIVADA)
+
     try:
         conexao, canal = rmq.criar_canal()
-        rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada_obj)
+        rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada)
         conexao.close()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro no RabbitMQ: {str(e)}")
@@ -358,40 +359,6 @@ async def criar_pedido(request: Request):
         "pedido_id": pedido_id,
         "mensagem": "Pedido criado e enviado para processamento."
     }
-
-def menu():
-    print("\n=============================================")
-    print("          E-COMMERCE MONSTER ENERGY            ")
-    print("\n=============================================")
-    print("1 - Ver produto")
-    print("2 - Criar pedido")
-    print("3 - Consultar pedido")
-    print("4 - Consultar status")
-    print("5 - Excluir pedido")
-    print("0 - Sair")
-    print("\n=============================================")
-
-def interface(canal, chave_privada):
-    while True:
-        menu()
-        opcao = input("Escolha uma opção: ")
-
-        match opcao:
-            case "1": 
-                solicitar_produtos( canal, chave_privada )
-            case "2":
-                criar_pedido( canal, chave_privada ) 
-            case "3": 
-                consultar_pedido() 
-            case "4": 
-                consultar_status() 
-            case "5": 
-                excluir_pedido( canal, chave_privada ) 
-            case "0": 
-                print( "\nEncerrando Principal..." ) 
-                break
-            case _: 
-                print("\nOpção inválida.")
 
 def iniciar():
     conexao, canal = rmq.criar_canal()
@@ -414,9 +381,7 @@ def iniciar():
 
     evento_consumidor_pronto.wait()
 
-    solicitar_produtos(canal, chave_privada, False)
-
-    interface(canal, chave_privada)
+    # solicitar_produtos(canal, chave_privada, False)
 
     conexao.close()
 
