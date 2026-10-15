@@ -1,6 +1,6 @@
 import os
 import sys
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import threading
@@ -358,6 +358,70 @@ async def criar_pedido(request: Request):
         "status": "sucesso",
         "pedido_id": pedido_id,
         "mensagem": "Pedido criado e enviado para processamento."
+    }
+
+@app.post("/promocoes/inscrever")
+async def inscrever_promocao(dados: dict = Body(...)):
+    email = dados.get("email")
+    categorias = dados.get("categorias", [])
+
+    if not email or not categorias:
+        raise HTTPException(status_code=400, detail="Email e categorias são obrigatórios.")
+
+    conteudo = {"email": email, "categorias": categorias}
+    evento = auxi.criar_evento("interesse.promocao", conteudo)
+
+    evento["nome_evento"] = "interesse.promocao"
+    evento["conteudo"] = conteudo
+
+    chave_privada = auxi.carregar_chave_privada(CHAVE_PRIVADA)
+
+    try:
+        conexao, canal = rmq.criar_canal()
+        rmq.publicar_evento(canal, rmq.EXCHANGE_PROMOCAO, evento, chave_privada, routing_key="interesse.promocao")
+        conexao.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro no RabbitMQ: {str(e)}")
+
+    return {
+        "status": "sucesso",
+        "mensagem": "Inscrição realizada com sucesso."
+    }
+
+@app.delete("/promocoes/cancelar")
+async def cancelar_promocao(dados: dict = Body(...)):
+    email = dados.get("email")
+
+    if not email:
+        raise HTTPException(status_code=400, detail="O e-mail é obrigatório para cancelar a inscrição.")
+
+    conteudo = {
+        "email": email
+    }
+
+    evento = auxi.criar_evento("promocao.cancelada", conteudo)
+    
+    evento["nome_evento"] = "promocao.cancelada"
+    evento["conteudo"] = conteudo
+
+    chave_privada = auxi.carregar_chave_privada(CHAVE_PRIVADA)
+
+    try:
+        conexao, canal = rmq.criar_canal()
+        rmq.publicar_evento(
+            canal, 
+            rmq.EXCHANGE_PROMOCAO, 
+            evento, 
+            chave_privada, 
+            routing_key="inscricao.cancelada"
+        )
+        conexao.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao publicar no RabbitMQ: {str(e)}")
+
+    return {
+        "status": "sucesso",
+        "mensagem": "Inscrição cancelada com sucesso."
     }
 
 def iniciar():

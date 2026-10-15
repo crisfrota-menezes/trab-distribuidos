@@ -119,6 +119,14 @@ def processar_evento_inscriacao(canal, method, properties, body):
                         interessados[cat].append(email)
             
                 salvar_interessados(interessados)
+
+        elif nome_evento == "inscricao.cancelada":
+            email = conteudo.get("email")
+            if email:
+                for cat in interessados:
+                    if email in interessados[cat]:
+                        interessados[cat].remove(email)
+                salvar_interessados(interessados)
         
         canal.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -132,6 +140,7 @@ def consumir_promocoes():
 
     canal.queue_declare(queue=fila_promocoes, durable=True)
     canal.queue_bind(exchange=rmq.EXCHANGE_PROMOCAO, queue=fila_promocoes, routing_key="interesse.promocao")
+    canal.queue_bind(exchange=rmq.EXCHANGE_PROMOCAO, queue=fila_promocoes, routing_key="inscricao.cancelada")
 
     canal.basic_consume(queue=fila_promocoes, on_message_callback=processar_evento_inscriacao, auto_ack=False)
     
