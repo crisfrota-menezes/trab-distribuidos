@@ -399,9 +399,9 @@ async def cancelar_promocao(dados: dict = Body(...)):
         "email": email
     }
 
-    evento = auxi.criar_evento("promocao.cancelada", conteudo)
+    evento = auxi.criar_evento("inscricao.cancelada", conteudo)
     
-    evento["nome_evento"] = "promocao.cancelada"
+    evento["nome_evento"] = "inscricao.cancelada"
     evento["conteudo"] = conteudo
 
     chave_privada = auxi.carregar_chave_privada(CHAVE_PRIVADA)
