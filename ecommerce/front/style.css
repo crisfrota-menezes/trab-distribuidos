@@ -827,3 +827,33 @@ body {
     font-size: 1.35rem;
     font-weight: 800;
 }
+
+.status-badge.status-aguardando {
+    background-color: var(--warning-bg);
+    color: var(--text-warning);
+    border: 1px solid var(--warning-border);
+}
+
+.status-badge.status-estoque-ok {
+    background-color: rgba(129, 140, 248, 0.15);
+    color: var(--status-purple);
+    border: 1px solid rgba(129, 140, 248, 0.3);
+}
+
+.status-badge.status-aprovado {
+    background-color: var(--green-alpha);
+    color: var(--monster-green);
+    border: 1px solid var(--monster-green);
+}
+
+.status-badge.status-enviado {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: var(--status-emerald);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.status-badge.status-error {
+    background-color: var(--danger-alpha);
+    color: var(--text-danger);
+    border: 1px solid var(--text-danger);
+}

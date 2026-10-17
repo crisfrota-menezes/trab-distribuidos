@@ -19,7 +19,7 @@ CHAVE_PRIVADA = os.path.join(BASE_DIR, 'chaves', 'privada.pem')
 JSON_PATH = os.path.join(BASE_DIR, 'promocoes.json')
 TEMPLATE_PATH = os.path.join(BASE_DIR, "promocao.html")
 
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "re_LrjGaavL_BKEyfShNESZZUNZkbsosqx5e")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 resend.api_key = RESEND_API_KEY
 
 def consulta_produtos():

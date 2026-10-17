@@ -5,6 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import threading
 import httpx
+import asyncio
+import json
+from fastapi.responses import StreamingResponse
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
@@ -23,6 +26,8 @@ CHAVE_PUBLICA_ESTOQUE = os.path.join(BASE_DIR, "chaves", "publicas", "estoque.pe
 CHAVE_PUBLICA_PAGAMENTO = os.path.join(BASE_DIR, "chaves", "publicas", "pagamento.pem")
 CHAVE_PUBLICA_ENTREGA = os.path.join(BASE_DIR, "chaves", "publicas", "entrega.pem")
 
+conexoes_sse: dict[int, list[asyncio.Queue]] = {}
+loop_principal: asyncio.AbstractEventLoop = None 
 pedidos = {}
 produtos = []
 proximo_pedido_id = 1
@@ -40,199 +45,91 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def mostrar_produtos():
+def notifica_cliente(pedido_id: int, dados_evento: dict):
     with lock:
-        if not produtos:
-            print("\nNenhum produto carregado. Escolha a opção 1 para consultar o Estoque.")
-            return
-        
-        print("\n ======== PRODUTOS ========")
+        queues = conexoes_sse.get(pedido_id, [])
+        for q in queues:
+            if loop_principal and loop_principal.is_running():
+                loop_principal.call_soon_threadsafe(q.put_nowait, dados_evento)
 
-        for produto in produtos:
-            print(f"ID: {produto['produto_id']} | "f"{produto['nome']} | "f"R$ {produto['valor']:.2f} | "f"Disponível: {produto['quantidade']}")
-            
-        print("=============================")
-
-def consultar_pedido():
-    try:
-        pedido_id = int(input("\nDigite o ID do pedido: "))
-    except ValueError:
-        print("\nID inválido.")
-        return
-
-    with lock:
-        pedido = pedidos.get(pedido_id)
-
-    if pedido is None:
-        print("\nPedido não encontrado.")
-        return
-
-    print("\n ======== PEDIDO ========")
-    print(f"ID: {pedido['pedido_id']} | " f"Status: {pedido['status']}")
-    print("Produtos:")
-
-    total = 0
-
-    for item in pedido["produtos"]:
-        nome_produto = "Desconhecido"
-        with lock:
-            for p in produtos:
-                if p["produto_id"] == item["produto_id"]:
-                    nome_produto = p["nome"]
-                    break
-                    
-        print(f"Produto ID: {item['produto_id']} | Nome: {nome_produto} | Quantidade: {item['quantidade']} | Valor: R$ {item['valor_unitario']:.2f}")
-        print(f"Subtotal: R$ {item['quantidade'] * item['valor_unitario']:.2f}")
-        total += item['quantidade'] * item['valor_unitario']
-
-    print(f"Valor total: R$ {total:.2f}")
-
-    print("\n =======================")
-
-def consultar_status():
-    try:
-        pedido_id = int(input("\nDigite o ID do pedido: "))
-    except ValueError:
-        print("\nID inválido.")
-        return
-
-    with lock:
-        pedido = pedidos.get(pedido_id)
-
-    if pedido is None:
-        print("\nPedido não encontrado.")
-        return
-
-    print("\n ======== PEDIDO ========")
-    print(f"ID: {pedido['pedido_id']} | " f"Status: {pedido['status']}")
-
-def excluir_pedido(canal, chave_privada):
-    try:
-        pedido_id = int(input("\nDigite o ID do pedido: "))
-    except ValueError:
-        print("\nID inválido.")
-        return
-
-    with lock:
-       pedido = pedidos.get(pedido_id)
-       
-    if pedido is None:
-        print("\nPedido não encontrado.")
-        return        
-
-    if pedido["status"] in ["excluido", "enviado"]:
-        print("\nEsse pedido não pode ser excluído.")
-        return
-
-    evento = auxi.criar_evento("pedido.excluido", {"pedido_id": pedido_id, "produtos": pedido["produtos"]})
-    rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada)
-
-    with lock:
-        pedidos[pedido_id]["status"] = "excluido"
-
+#def excluir_pedido(canal, chave_privada):
+#    try:
+#        pedido_id = int(input("\nDigite o ID do pedido: "))
+#    except ValueError:
+#        print("\nID inválido.")
+#        return
+#
+#    with lock:
+#       pedido = pedidos.get(pedido_id)
+#       
+#    if pedido is None:
+#        print("\nPedido não encontrado.")
+#        return        
+#
+#    if pedido["status"] in ["excluido", "enviado"]:
+#        print("\nEsse pedido não pode ser excluído.")
+#        return
+#
+#    evento = auxi.criar_evento("pedido.excluido", {"pedido_id": pedido_id, "produtos": pedido["produtos"]})
+#    rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada)
+#
+#    with lock:
+#        pedidos[pedido_id]["status"] = "excluido"
+#
 def processar_evento(canal, evento, chave_privada):
     global produtos
 
     tipo = evento["tipo"]
     dados = evento["dados"]
+    pedido_id = dados.get("pedido_id")
 
     match tipo:
 
         case "produto.lista":
             with lock:
                 produtos = dados["produtos"]
-
             evento_produtos.set()
 
         case "pedido.estoque_ok":
-            pedido_id = dados["pedido_id"]
-
             with lock:
-                if pedido_id not in pedidos:
-                    print(f"\nPedido {pedido_id} não encontrado.")
-                    return
-
-                pedidos[pedido_id]["status"] = "estoque_ok"
+                if pedido_id in pedidos:
+                    pedidos[pedido_id]["status"] = "estoque_ok"
+            
+            notifica_cliente(pedido_id, {"status": "estoque_ok", "mensagem": "Estoque reservado!"})
 
         case "estoque.indisponivel":
-            pedido_id = dados["pedido_id"]
-
             with lock:
-                if pedido_id not in pedidos:
-                    print(f"\nPedido {pedido_id} não encontrado.")
-                    return
+                if pedido_id in pedidos:
+                    pedidos[pedido_id]["status"] = "excluido"
+            
+            notifica_cliente(pedido_id, {"status": "excluido", "mensagem": "Estoque indisponível! Pedido cancelado."})
 
-                pedido = pedidos[pedido_id]
-
-            print("\nEstoque indisponível. Pedido será excluído.")
-
-            evento_exclusao = auxi.criar_evento(
-                "pedido.excluido",
-                {
-                    "pedido_id": pedido_id,
-                    "produtos": pedido["produtos"]
-                }
-            )
-
-            rmq.publicar_evento(
-                canal,
-                rmq.EXCHANGE_ECOMMERCE,
-                evento_exclusao,
-                chave_privada
-            )
-
-            with lock:
-                pedidos[pedido_id]["status"] = "excluido"
+            evento_exclusao = auxi.criar_evento("pedido.excluido", {"pedido_id": pedido_id, "produtos": dados.get("produtos", [])})
+            rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_exclusao, chave_privada)
 
         case "pagamento.aprovado":
-            pedido_id = dados["pedido_id"]
-
             with lock:
-                if pedido_id not in pedidos:
-                    print(f"\nPedido {pedido_id} não encontrado.")
-                    return
-
-                pedidos[pedido_id]["status"] = "pagamento_aprovado"
+                if pedido_id in pedidos:
+                    pedidos[pedido_id]["status"] = "pagamento_aprovado"
+            
+            notifica_cliente(pedido_id, {"status": "pagamento_aprovado", "mensagem": "Pagamento aprovado!"})
 
         case "pagamento.recusado":
-            pedido_id = dados["pedido_id"]
-
             with lock:
-                if pedido_id not in pedidos:
-                    print(f"\nPedido {pedido_id} não encontrado.")
-                    return
+                if pedido_id in pedidos:
+                    pedidos[pedido_id]["status"] = "excluido"
 
-                pedido = pedidos[pedido_id]
+            notifica_cliente(pedido_id, {"status": "excluido", "mensagem": "Pagamento recusado! Pedido cancelado."})
 
-            print("\nPagamento recusado. Pedido excluído.")
-
-            evento_exclusao = auxi.criar_evento(
-                "pedido.excluido",
-                {
-                    "pedido_id": pedido_id,
-                    "produtos": pedido["produtos"]
-                }
-            )
-
-            rmq.publicar_evento(
-                canal,
-                rmq.EXCHANGE_ECOMMERCE,
-                evento_exclusao,
-                chave_privada
-            )
-
-            with lock:
-                pedidos[pedido_id]["status"] = "excluido"
+            evento_exclusao = auxi.criar_evento("pedido.excluido", {"pedido_id": pedido_id, "produtos": dados.get("produtos", [])})
+            rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_exclusao, chave_privada)                
 
         case "pedido.enviado":
-            pedido_id = dados["pedido_id"]
-
             with lock:
-                if pedido_id not in pedidos:
-                    print(f"\nPedido {pedido_id} não encontrado.")
-                    return
+                if pedido_id in pedidos:
+                    pedidos[pedido_id]["status"] = "enviado"
 
-                pedidos[pedido_id]["status"] = "enviado"
+            notifica_cliente(pedido_id, {"status": "enviado", "mensagem": "Pedido faturado e enviado para entrega!"})
 
         case _:
             print(f"\nEvento não esperado pelo Principal: {tipo}")
@@ -321,6 +218,38 @@ async def consulta_produtos():
                 status_code=503, 
                 detail="Serviço externo indisponível"
             )
+
+@app.get("/pedidos/stream/{pedido_id}")
+async def stream_pedido(pedido_id: int):
+    fila = asyncio.Queue()
+
+    async def gerar_evento():
+        with lock:
+            if pedido_id not in conexoes_sse:
+                conexoes_sse[pedido_id] = []
+            conexoes_sse[pedido_id].append(fila)
+
+        try:
+            with lock:
+                status_atual = pedidos.get(pedido_id, {}).get("status", "criado")
+            yield f"data: {json.dumps({'status': status_atual, 'mensagem': 'Conexão SSE estabelecida.'})}\n\n"
+
+            while True:
+                dados_evento = await fila.get()
+                yield f"data: {json.dumps(dados_evento)}\n\n"
+                
+                if dados_evento.get("status") in ["enviado", "excluido"]:
+                    break
+
+        except asyncio.CancelledError:
+            print(f"\nErro no SSE do pedido: {pedido_id}")
+            pass
+        finally:
+            with lock:
+                if pedido_id in conexoes_sse and fila in conexoes_sse[pedido_id]:
+                    conexoes_sse[pedido_id].remove(fila)
+
+    return StreamingResponse(gerar_evento(), media_type="text/event-stream")
 
 @app.post("/pedidos")
 async def criar_pedido(request: Request):
@@ -424,6 +353,11 @@ async def cancelar_promocao(dados: dict = Body(...)):
         "mensagem": "Inscrição cancelada com sucesso."
     }
 
+@app.on_event("startup")
+async def startup_event():
+    global loop_principal
+    loop_principal = asyncio.get_running_loop()
+
 def iniciar():
     conexao, canal = rmq.criar_canal()
     print("Conexão com RabbitMQ estabelecida.")
@@ -444,8 +378,6 @@ def iniciar():
     thread_consumidor.start()
 
     evento_consumidor_pronto.wait()
-
-    # solicitar_produtos(canal, chave_privada, False)
 
     conexao.close()
 
