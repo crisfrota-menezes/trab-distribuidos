@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Monster Energy E-Commerce - Catálogo de bebidas e gerenciamento de pedidos.">
     <title>Monster Energy E-Commerce</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=4">
 </head>
 
 <body>
@@ -74,6 +74,61 @@
                     </button>
                 </div>
             </div>
+
+            <div class="promocoes-card" id="card-promocoes">
+                <div class="promocoes-header">
+                    <h2 class="promocoes-title">Receba Promoções</h2>
+                    <p class="promocoes-subtitle">Cadastre seu e-mail e escolha as categorias para receber promoções
+                        exclusivas diretamente por e-mail.</p>
+                </div>
+
+                <form id="form-promocao" class="promocoes-form" onsubmit="event.preventDefault(); inscreverPromocao();">
+                    <div class="promocoes-form-group">
+                        <label for="input-promocao-email" class="promocao-label">Seu e-mail:</label>
+                        <input type="email" id="input-promocao-email" placeholder="exemplo@email.com"
+                            class="input-promocao" required>
+                    </div>
+
+                    <div class="promocoes-form-group">
+                        <label class="promocao-label">Categorias de interesse:</label>
+                        <div class="categorias-grid">
+                            <label class="categoria-pill">
+                                <input type="checkbox" name="categoria" value="Ultra" checked>
+                                <span class="pill-box">
+                                    <span class="pill-name">Linha Ultra</span>
+                                    <span class="pill-desc">10% OFF</span>
+                                </span>
+                            </label>
+                            <label class="categoria-pill">
+                                <input type="checkbox" name="categoria" value="Punch" checked>
+                                <span class="pill-box">
+                                    <span class="pill-name">Linha Punch</span>
+                                    <span class="pill-desc">20% OFF</span>
+                                </span>
+                            </label>
+                            <label class="categoria-pill">
+                                <input type="checkbox" name="categoria" value="Tradicionais" checked>
+                                <span class="pill-box">
+                                    <span class="pill-name">Tradicionais</span>
+                                    <span class="pill-desc">30% OFF</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="promocoes-actions">
+                        <button type="submit" id="btn-inscrever-promocao" class="btn btn-primary">
+                            Inscrever nas Promoções
+                        </button>
+                        <button type="button" id="btn-cancelar-promocao" class="btn btn-cancelar-promo"
+                            onclick="cancelarPromocao()">
+                            Cancelar Inscrição
+                        </button>
+                    </div>
+
+                    <div id="promocao-feedback" class="promocao-feedback hidden"></div>
+                </form>
+            </div>
         </section>
 
         <section id="tela-adicionar-pedido" class="tela hidden">
@@ -95,7 +150,8 @@
                     <label for="input-qtd-selecionada" class="qtd-label">Selecione a Quantidade:</label>
                     <div class="qtd-controle">
                         <button type="button" id="btn-diminuir-qtd" class="btn-qtd">−</button>
-                        <input type="number" id="input-qtd-selecionada" class="input-qtd" value="1" min="1" max="1" readonly>
+                        <input type="number" id="input-qtd-selecionada" class="input-qtd" value="1" min="1" max="1"
+                            readonly>
                         <button type="button" id="btn-aumentar-qtd" class="btn-qtd">+</button>
                     </div>
 
@@ -133,7 +189,7 @@
         </section>
     </main>
 
-    <script src="script.js?v=3" defer></script>
+    <script src="script.js?v=5" defer></script>
 </body>
 
 </html>

@@ -9,6 +9,7 @@ const conexoesSSE = {};
 const STATUS_MAP = {
     "criado": { dot: "aguardando", label: "Aguardando Processamento", css: "status-aguardando" },
     "estoque_ok": { dot: "estoque-ok", label: "Estoque Confirmado", css: "status-estoque-ok" },
+    "pagamento_aguardando": { dot: "aguardando", label: "Aguardando Pagamento", css: "status-aguardando" },
     "pagamento_aprovado": { dot: "aprovado", label: "Pagamento Aprovado", css: "status-aprovado" },
     "enviado": { dot: "enviado", label: "Enviado", css: "status-enviado" },
     "excluido": { dot: "error", label: "Pedido Cancelado/Recusado", css: "status-error" }
@@ -37,6 +38,9 @@ function conectarSSE(pedidoId) {
 
             if (pedido && data.status) {
                 pedido.status = data.status;
+                if (data.checkout_url) {
+                    pedido.checkout_url = data.checkout_url;
+                }
                 salvarHistoricoLocalStorage();
                 atualizarStatusProcesso();
 
@@ -231,7 +235,7 @@ function atualizarStatusProcesso() {
     if (pedidosFinalizados.length > 0) {
         const ultimo = pedidosFinalizados[0];
         const config = STATUS_MAP[ultimo.status] || { dot: "aguardando", label: ultimo.status };
-        definirDotStatus(config.dot, `Pedido #${ultimo.id}: ${config.label}`);
+        definirDotStatus(config.dot, `${config.label}`);
         return;
     }
 
@@ -268,6 +272,10 @@ function renderizarHistoricoPedidos() {
                 <td class="col-valor">R$ ${(i.quantidade * i.valor).toFixed(2)}</td>
             </tr>`).join("");
 
+        const botaoCheckout = (p.status === "pagamento_aguardando" && p.checkout_url)
+            ? `<a href="${p.checkout_url}" target="_blank" class="btn btn-primary btn-card-checkout">Pagar Agora</a>`
+            : "";
+
         return `
             <div class="pedido-card">
                 <div class="pedido-card-top">
@@ -284,8 +292,11 @@ function renderizarHistoricoPedidos() {
                     <tbody>${itensHtml}</tbody>
                 </table>
                 <div class="pedido-card-footer">
-                    <span class="pedido-total-label">Total do Pedido:</span>
-                    <strong class="pedido-total-valor">R$ ${p.total.toFixed(2)}</strong>
+                    <div class="pedido-total-box">
+                        <span class="pedido-total-label">Total do Pedido:</span>
+                        <strong class="pedido-total-valor">R$ ${p.total.toFixed(2)}</strong>
+                    </div>
+                    ${botaoCheckout}
                 </div>
             </div>`;
     }).join("");
@@ -351,3 +362,85 @@ document.addEventListener("DOMContentLoaded", () => {
     $("btn-voltar-catalogo-2")?.addEventListener("click", () => navegarPara("tela-catalogo"));
     $("logo-header")?.addEventListener("click", () => navegarPara("tela-catalogo"));
 });
+
+async function inscreverPromocao() {
+    const emailInput = $("input-promocao-email");
+    const email = emailInput?.value.trim();
+    const checkboxes = document.querySelectorAll("input[name='categoria']:checked");
+    const categorias = Array.from(checkboxes).map(cb => cb.value);
+
+    if (!email) {
+        exibirFeedbackPromocao("Por favor, informe seu e-mail.", "erro");
+        return;
+    }
+
+    if (categorias.length === 0) {
+        exibirFeedbackPromocao("Selecione pelo menos uma categoria de promoção.", "erro");
+        return;
+    }
+
+    const btn = $("btn-inscrever-promocao");
+    const textoOriginal = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = "Inscrevendo...";
+
+    try {
+        const res = await fetch(`${API_URL}/promocoes/inscrever`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, categorias })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Erro ao inscrever.");
+
+        exibirFeedbackPromocao(`${data.mensagem || "Inscrição realizada com sucesso! Fique atento ao seu e-mail."}`, "sucesso");
+    } catch (err) {
+        exibirFeedbackPromocao(`Erro: ${err.message}`, "erro");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = textoOriginal;
+    }
+}
+
+async function cancelarPromocao() {
+    const emailInput = $("input-promocao-email");
+    const email = emailInput?.value.trim();
+
+    if (!email) {
+        exibirFeedbackPromocao("Digite seu e-mail no campo acima para cancelar a inscrição.", "erro");
+        emailInput?.focus();
+        return;
+    }
+
+    const btn = $("btn-cancelar-promocao");
+    const textoOriginal = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = "Cancelando...";
+
+    try {
+        const res = await fetch(`${API_URL}/promocoes/cancelar`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Erro ao cancelar inscrição.");
+
+        exibirFeedbackPromocao(`${data.mensagem || "Inscrição cancelada com sucesso."}`, "sucesso");
+    } catch (err) {
+        exibirFeedbackPromocao(`Erro: ${err.message}`, "erro");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = textoOriginal;
+    }
+}
+
+function exibirFeedbackPromocao(mensagem, tipo) {
+    const el = $("promocao-feedback");
+    if (!el) return;
+    el.textContent = mensagem;
+    el.className = `promocao-feedback feedback-${tipo}`;
+    el.classList.remove("hidden");
+}

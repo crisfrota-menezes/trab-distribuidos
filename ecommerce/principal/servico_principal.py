@@ -107,6 +107,19 @@ def processar_evento(canal, evento, chave_privada):
             evento_exclusao = auxi.criar_evento("pedido.excluido", {"pedido_id": pedido_id, "produtos": dados.get("produtos", [])})
             rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_exclusao, chave_privada)
 
+        case "pagamento.aguardando":
+            checkout_url = dados.get("checkout_url")
+            with lock:
+                if pedido_id in pedidos:
+                    pedidos[pedido_id]["status"] = "pagamento_aguardando"
+                    pedidos[pedido_id]["checkout_url"] = checkout_url
+            
+            notifica_cliente(pedido_id, {
+                "status": "pagamento_aguardando",
+                "mensagem": "Aguardando pagamento no checkout...",
+                "checkout_url": checkout_url
+            })
+
         case "pagamento.aprovado":
             with lock:
                 if pedido_id in pedidos:
@@ -150,6 +163,9 @@ def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chaves_pub
         case "estoque.indisponivel":
             chave_publica = chaves_publicas["estoque"]
 
+        case "pagamento.aguardando":
+            chave_publica = chaves_publicas["pagamento"]
+
         case "pagamento.aprovado":
             chave_publica = chaves_publicas["pagamento"]
 
@@ -184,6 +200,7 @@ def iniciar_consumidor(chave_privada, chaves_publicas):
     canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="pedido.estoque_ok")
     canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="estoque.indisponivel")
 
+    canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="pagamento.aguardando")
     canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="pagamento.aprovado")
     canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_PRINCIPAL, routing_key="pagamento.recusado")
 
@@ -382,4 +399,5 @@ def iniciar():
     conexao.close()
 
 if __name__ == "__main__":
+    iniciar()
     uvicorn.run(app, host="127.0.0.1", port=8000)

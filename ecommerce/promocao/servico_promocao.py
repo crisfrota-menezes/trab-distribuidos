@@ -35,9 +35,13 @@ def consulta_produtos():
 
 def carregar_interessados() -> dict:
     if not os.path.exists(JSON_PATH):
-        return {"A": [], "B": [], "C": []}
+        return {"Ultra": [], "Punch": [], "Tradicionais": []}
     with open(JSON_PATH, 'r', encoding="utf-8") as f:
-        return json.load(f)
+        dados = json.load(f)
+        for cat in ["Ultra", "Punch", "Tradicionais"]:
+            if cat not in dados:
+                dados[cat] = []
+        return dados
 
 def salvar_interessados(interessados: dict):
     with open(JSON_PATH, 'w', encoding="utf-8") as f:
@@ -53,12 +57,12 @@ def enviar_email(email: str, dados_produto: dict):
         html = html.replace("{valor_promocional}", f"{dados_produto['valor_promocional']:.2f}")
         html = html.replace("{categoria}", str(dados_produto['categoria']))
     else:
-        html = f"<h1>Monster Store</h1><p><b>Promoção Categoria {dados_produto['categoria']}:</b> {dados_produto['nome']} por R$ {dados_produto['valor_promocional']:.2f}</p>"
+        html = f"<h1>Monster Store</h1><p><b>Promoção Linha {dados_produto['categoria']}:</b> {dados_produto['nome']} por R$ {dados_produto['valor_promocional']:.2f}</p>"
 
     params: resend.Emails.SendParams = {
         "from": "Monster Store <onboarding@resend.dev>",
         "to": [email],
-        "subject": f"Promoção Categoria {dados_produto['categoria']}: {dados_produto['nome']}!",
+        "subject": f"Promoção Linha {dados_produto['categoria']}: {dados_produto['nome']}!",
         "html": html,
     }
 
@@ -77,10 +81,26 @@ def gerar_promocao(canal, chave_privada):
             time.sleep(10)
             continue
 
-        item = random.choice(list(produtos.values()))
-        categoria = random.choice(["A", "B", "C"])
+        categoria = random.choice(["Ultra", "Punch", "Tradicionais"])
         
-        descontos = { "A": 0.9, "B": 0.8, "C": 0.7 }
+        descontos = {
+            "Ultra": 0.9,          # 10% de desconto
+            "Punch": 0.8,          # 20% de desconto
+            "Tradicionais": 0.7    # 30% de desconto
+        }
+
+        # Filtra os produtos da categoria para fazer sentido temático
+        itens_categoria = [
+            p for p in produtos.values()
+            if (categoria == "Ultra" and "ultra" in p["nome"].lower()) or
+               (categoria == "Punch" and "punch" in p["nome"].lower()) or
+               (categoria == "Tradicionais" and ("tradicional" in p["nome"].lower() or "mango" in p["nome"].lower()))
+        ]
+
+        if not itens_categoria:
+            itens_categoria = list(produtos.values())
+
+        item = random.choice(itens_categoria)
         valor_promocional = item['valor'] * descontos[categoria]
 
         dados = {
@@ -99,7 +119,7 @@ def gerar_promocao(canal, chave_privada):
         for email in emails_destino:
             enviar_email(email, dados)
 
-        time.sleep(60)
+        time.sleep(10)
 
 def processar_evento_inscriacao(canal, method, properties, body):
     try:
