@@ -1,8 +1,9 @@
 import os
 import sys
+import json
+import threading
 from fastapi import FastAPI
 import uvicorn
-import threading
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
@@ -16,58 +17,42 @@ import shared.rabbitmq as rmq
 FILA_ESTOQUE = "fila_estoque"
 CHAVE_PRIVADA = os.path.join(BASE_DIR, "chaves", "privada.pem")
 CHAVE_PUBLICA_PRINCIPAL = os.path.join(BASE_DIR, "chaves", "publicas", "principal.pem")
+JSON_PRODUTOS = os.path.join(BASE_DIR, "produtos.json")
 
-#Catálogo de Produtos
-produtos = {
-    1: {
-        "produto_id": 1,
-        "nome": "Monster Tradicional",
-        "valor": 12.00,
-        "quantidade": 30
-    },
+lock = threading.Lock()
+pedidos_reservados = {}
 
-    2: {
-        "produto_id": 2,
-        "nome": "Monster Mango Loco",
-        "valor": 12.00,
-        "quantidade": 40
-    },
-
-    3: {
-        "produto_id": 3,
-        "nome": "Monster Ultra White",
-        "valor": 12.00,
-        "quantidade": 50
-    },
-
-    4: {
-        "produto_id": 4,
-        "nome": "Monster Pacific Punch",
-        "valor": 12.00,
-        "quantidade": 20
-    },
-
-    5: {
-        "produto_id": 5,
-        "nome": "Monster Pipeline Punch",
-        "valor": 12.00,
-        "quantidade": 15
-    },
-
-    6: {
-        "produto_id": 6,
-        "nome": "Monster Ultra Watermelon",
-        "valor": 12.00,
-        "quantidade": 10
-    },
-
-    7: {
-        "produto_id": 7,
-        "nome": "Monster Rio Punch",
-        "valor": 12.00,
-        "quantidade": 0
-    }
+# Catálogo padrão caso o arquivo não exista
+PRODUTOS_PADRAO = {
+    1: {"produto_id": 1, "nome": "Monster Tradicional", "valor": 12.00, "quantidade": 30},
+    2: {"produto_id": 2, "nome": "Monster Mango Loco", "valor": 12.00, "quantidade": 40},
+    3: {"produto_id": 3, "nome": "Monster Ultra White", "valor": 12.00, "quantidade": 50},
+    4: {"produto_id": 4, "nome": "Monster Pacific Punch", "valor": 12.00, "quantidade": 20},
+    5: {"produto_id": 5, "nome": "Monster Pipeline Punch", "valor": 12.00, "quantidade": 15},
+    6: {"produto_id": 6, "nome": "Monster Ultra Watermelon", "valor": 12.00, "quantidade": 10},
+    7: {"produto_id": 7, "nome": "Monster Rio Punch", "valor": 12.00, "quantidade": 0}
 }
+
+def salvar_produtos_disco(dados_produtos):
+    try:
+        with open(JSON_PRODUTOS, "w", encoding="utf-8") as f:
+            json.dump(dados_produtos, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"Erro ao salvar produtos.json: {e}")
+
+def carregar_produtos():
+    if not os.path.exists(JSON_PRODUTOS):
+        salvar_produtos_disco(PRODUTOS_PADRAO)
+        return dict(PRODUTOS_PADRAO)
+    try:
+        with open(JSON_PRODUTOS, "r", encoding="utf-8") as f:
+            dados = json.load(f)
+            return {int(k): v for k, v in dados.items()}
+    except Exception as e:
+        print(f"Erro ao carregar produtos.json: {e}. Usando catálogo padrão.")
+        return dict(PRODUTOS_PADRAO)
+
+produtos = carregar_produtos()
 
 app = FastAPI()
 
@@ -78,68 +63,73 @@ def processar_pedido(canal, evento, chave_privada):
 
     print(f"Processando pedido {pedido_id}...")
 
-    estoque_disponivel = True
+    with lock:
+        estoque_disponivel = True
 
-    for item in produtos_pedido:
-        produto_id = item['produto_id']
-        quantidade = item['quantidade']
+        for item in produtos_pedido:
+            produto_id = item['produto_id']
+            quantidade = item['quantidade']
 
-        if produto_id not in produtos:
-            print(f"Produto {produto_id} não existe.")
-            estoque_disponivel = False
-            break
+            if produto_id not in produtos:
+                print(f"Produto {produto_id} não existe.")
+                estoque_disponivel = False
+                break
 
-        #Verificar produtos antes de alterar estoque
-        if produtos[produto_id]["quantidade"] < quantidade:
-            print(f"Estoque insuficiente para o produto {produto_id}")
-            estoque_disponivel = False
-            break
+            # Verificar produtos antes de alterar estoque
+            if produtos[produto_id]["quantidade"] < quantidade:
+                print(f"Estoque insuficiente para o produto {produto_id}")
+                estoque_disponivel = False
+                break
 
-    #Estoque indisponivel
-    if not estoque_disponivel:
-        evento_resposta = auxi.criar_evento("estoque.indisponivel", {"pedido_id": pedido_id, "produtos": produtos_pedido})
-        rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_resposta, chave_privada)
-        print(f"Estoque indisponivel para o pedido {pedido_id}.")
-        return
+        # Estoque indisponível
+        if not estoque_disponivel:
+            evento_resposta = auxi.criar_evento("estoque.indisponivel", {"pedido_id": pedido_id, "produtos": produtos_pedido})
+            rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_resposta, chave_privada)
+            print(f"Estoque indisponível para o pedido {pedido_id}.")
+            return
 
-    #Reservar estoque
-    for item in produtos_pedido:
-        produto_id = item["produto_id"]
-        quantidade_solicitada = item["quantidade"]
+        # Reservar estoque
+        for item in produtos_pedido:
+            produto_id = item["produto_id"]
+            quantidade_solicitada = item["quantidade"]
+            produtos[produto_id]["quantidade"] -= quantidade_solicitada
+            print(f"Produto {produto_id}: -{quantidade_solicitada} unidade(s).")
 
-        produtos[produto_id]["quantidade"] -= quantidade_solicitada
-
-        print(f"Produto {produto_id}: -{quantidade_solicitada} unidade(s).")
+        pedidos_reservados[pedido_id] = produtos_pedido
+        salvar_produtos_disco(produtos)
 
     print("Estoque reservado com sucesso.")
 
     evento_resposta = auxi.criar_evento("pedido.estoque_ok", {"pedido_id": pedido_id, "produtos": produtos_pedido})
-
     rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_resposta, chave_privada)
     print(f"Estoque reservado para o pedido {pedido_id}.")
 
 def restaurar_estoque(evento):
     dados = evento["dados"]
     pedido_id = dados["pedido_id"]
-    produtos_pedido = dados["produtos"]
 
-    print(f"\nRestaurando estoque do pedido {pedido_id}...")
+    with lock:
+        itens_para_restaurar = pedidos_reservados.pop(pedido_id, None)
 
-    for item in produtos_pedido:
-        produto_id = item["produto_id"]
-        quantidade = item["quantidade"]
+        if itens_para_restaurar is None:
+            print(f"\nPedido {pedido_id} não possuía reserva ativa de estoque. Nenhuma devolução efetuada.")
+            return
 
-        if produto_id in produtos:
-            produtos[produto_id]["quantidade"] += quantidade
+        print(f"\nRestaurando estoque do pedido {pedido_id}...")
 
-            print(f"Produto {produto_id}: +{quantidade} unidade(s)")
+        for item in itens_para_restaurar:
+            produto_id = item["produto_id"]
+            quantidade = item["quantidade"]
 
-    print("Estoque restaurado.")
+            if produto_id in produtos:
+                produtos[produto_id]["quantidade"] += quantidade
+                print(f"Produto {produto_id}: +{quantidade} unidade(s)")
 
+        salvar_produtos_disco(produtos)
+        print("Estoque restaurado e salvo em disco com sucesso.")
 
 def receber_evento(canal, metodo, propriedades, corpo, chave_privada, chave_publica_principal):
     evento = auxi.json_para_evento(corpo)
-
     tipo = evento["tipo"]
 
     print(f"\nEvento recebido: {tipo}")
@@ -168,9 +158,7 @@ def iniciar_consumidor():
     print("Conexão com RabbitMQ estabelecida.")
 
     canal.queue_declare(queue=FILA_ESTOQUE, durable=True)
-
     canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_ESTOQUE, routing_key="pedido.criado")
-
     canal.queue_bind(exchange=rmq.EXCHANGE_ECOMMERCE, queue=FILA_ESTOQUE, routing_key="pedido.excluido")
 
     print(f"Fila '{FILA_ESTOQUE}' vinculada à exchange '{rmq.EXCHANGE_ECOMMERCE}'.")
@@ -190,7 +178,6 @@ def iniciar_consumidor():
                         auto_ack=False)
 
     print("Aguardando eventos...")
-
     canal.start_consuming()
 
 @app.on_event("startup")
@@ -200,7 +187,8 @@ def startup_event():
 
 @app.get("/produtos")
 def listar_produtos():
-    return list(produtos.values())
+    with lock:
+        return list(produtos.values())
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8001)

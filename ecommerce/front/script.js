@@ -23,6 +23,10 @@ function navegarPara(telaId) {
         if (el) el.classList.toggle("hidden", id !== telaId);
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
+
+    if (telaId === "tela-catalogo") {
+        carregarProdutos();
+    }
 }
 
 function conectarSSE(pedidoId) {
@@ -43,6 +47,11 @@ function conectarSSE(pedidoId) {
                 }
                 salvarHistoricoLocalStorage();
                 atualizarStatusProcesso();
+
+                // Sempre que o estoque mudar (reserva ou cancelamento), atualiza o catálogo
+                if (["estoque_ok", "excluido"].includes(data.status)) {
+                    carregarProdutos();
+                }
 
                 // Se estiver na tela de histórico, re-renderiza os cards
                 if (!$("tela-consultar-pedidos").classList.contains("hidden")) {
@@ -68,7 +77,7 @@ function conectarSSE(pedidoId) {
 
 async function carregarProdutos() {
     try {
-        const res = await fetch(`${API_URL}/produtos`);
+        const res = await fetch(`${API_URL}/produtos?_t=${Date.now()}`);
         if (!res.ok) throw new Error();
         produtosCatalogo = await res.json();
     } catch {
@@ -210,6 +219,7 @@ async function finalizarPedido() {
         salvarHistoricoLocalStorage();
 
         conectarSSE(novoPedido.id);
+        carregarProdutos();
 
         pedidoAtual = [];
         produtoSelecionado = null;
@@ -273,7 +283,12 @@ function renderizarHistoricoPedidos() {
             </tr>`).join("");
 
         const botaoCheckout = (p.status === "pagamento_aguardando" && p.checkout_url)
-            ? `<a href="${p.checkout_url}" target="_blank" class="btn btn-primary btn-card-checkout">Pagar Agora</a>`
+            ? `<a href="${p.checkout_url}" target="_blank" class="btn btn-primary btn-pagar-agora">Pagar Agora</a>`
+            : "";
+
+        const podeCancelar = ["criado", "estoque_ok", "pagamento_aguardando"].includes(p.status);
+        const botaoCancelar = podeCancelar
+            ? `<button type="button" class="btn btn-card-cancelar" onclick="cancelarPedido(${p.id})">Cancelar Pedido</button>`
             : "";
 
         return `
@@ -296,10 +311,45 @@ function renderizarHistoricoPedidos() {
                         <span class="pedido-total-label">Total do Pedido:</span>
                         <strong class="pedido-total-valor">R$ ${p.total.toFixed(2)}</strong>
                     </div>
-                    ${botaoCheckout}
+                    <div class="pedido-acoes-footer">
+                        ${botaoCheckout}
+                        ${botaoCancelar}
+                    </div>
                 </div>
             </div>`;
     }).join("");
+}
+
+async function cancelarPedido(pedidoId) {
+    if (!confirm(`Deseja realmente cancelar o Pedido #${pedidoId}?`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/pedidos/${pedidoId}`, {
+            method: "DELETE"
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+            throw new Error(data.detail || "Erro ao cancelar pedido.");
+        }
+
+        const pedido = pedidosFinalizados.find(p => p.id === pedidoId);
+        if (pedido) {
+            pedido.status = "excluido";
+            salvarHistoricoLocalStorage();
+            atualizarStatusProcesso();
+            renderizarHistoricoPedidos();
+        }
+
+        carregarProdutos();
+
+        alert(data.mensagem || "Pedido cancelado com sucesso!");
+    } catch (err) {
+        alert(`Erro ao cancelar pedido: ${err.message}`);
+    }
 }
 
 function salvarHistoricoLocalStorage() {

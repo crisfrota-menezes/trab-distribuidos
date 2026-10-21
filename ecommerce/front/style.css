@@ -828,23 +828,38 @@ input[type="number"] {
     font-weight: 800;
 }
 
-.btn-card-checkout {
+.pedido-acoes-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.btn-card-cancelar {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 8px 16px;
     font-size: 0.9rem;
     font-weight: 700;
-    text-decoration: none;
-    border-radius: var(--radius-sm);
-    background: linear-gradient(135deg, var(--green-accent), var(--monster-green));
-    color: var(--bg-main);
+    cursor: pointer;
     transition: var(--transition);
+    background: transparent;
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--green-accent);
 }
 
-.btn-card-checkout:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px var(--green-glow);
+.btn-card-cancelar:hover {
+    border: 1px solid var(--danger-border-hover);
+    border-left: 4px solid var(--text-danger);
+    color: var(--text-danger);
+}
+
+.btn-pagar-agora {
+    padding: 8px 16px;
+    font-size: 0.9rem;
+    font-weight: 700;
 }
 
 .promocoes-card {

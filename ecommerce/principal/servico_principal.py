@@ -52,30 +52,6 @@ def notifica_cliente(pedido_id: int, dados_evento: dict):
             if loop_principal and loop_principal.is_running():
                 loop_principal.call_soon_threadsafe(q.put_nowait, dados_evento)
 
-#def excluir_pedido(canal, chave_privada):
-#    try:
-#        pedido_id = int(input("\nDigite o ID do pedido: "))
-#    except ValueError:
-#        print("\nID inválido.")
-#        return
-#
-#    with lock:
-#       pedido = pedidos.get(pedido_id)
-#       
-#    if pedido is None:
-#        print("\nPedido não encontrado.")
-#        return        
-#
-#    if pedido["status"] in ["excluido", "enviado"]:
-#        print("\nEsse pedido não pode ser excluído.")
-#        return
-#
-#    evento = auxi.criar_evento("pedido.excluido", {"pedido_id": pedido_id, "produtos": pedido["produtos"]})
-#    rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada)
-#
-#    with lock:
-#        pedidos[pedido_id]["status"] = "excluido"
-#
 def processar_evento(canal, evento, chave_privada):
     global produtos
 
@@ -103,9 +79,6 @@ def processar_evento(canal, evento, chave_privada):
                     pedidos[pedido_id]["status"] = "excluido"
             
             notifica_cliente(pedido_id, {"status": "excluido", "mensagem": "Estoque indisponível! Pedido cancelado."})
-
-            evento_exclusao = auxi.criar_evento("pedido.excluido", {"pedido_id": pedido_id, "produtos": dados.get("produtos", [])})
-            rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento_exclusao, chave_privada)
 
         case "pagamento.aguardando":
             checkout_url = dados.get("checkout_url")
@@ -304,6 +277,54 @@ async def criar_pedido(request: Request):
         "status": "sucesso",
         "pedido_id": pedido_id,
         "mensagem": "Pedido criado e enviado para processamento."
+    }
+
+@app.delete("/pedidos/{pedido_id}")
+async def excluir_pedido(pedido_id: int):
+    with lock:
+        pedido = pedidos.get(pedido_id)
+        if not pedido:
+            raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+
+        status_atual = pedido.get("status")
+        if status_atual in ["pagamento_aprovado", "enviado"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Não é possível cancelar um pedido que já foi pago ou enviado."
+            )
+
+        if status_atual == "excluido":
+            raise HTTPException(
+                status_code=400,
+                detail="Este pedido já está cancelado/excluído."
+            )
+
+        pedido["status"] = "excluido"
+        produtos_pedido = pedido.get("produtos", [])
+
+    notifica_cliente(pedido_id, {
+        "status": "excluido",
+        "mensagem": "Pedido cancelado pelo cliente."
+    })
+
+    chave_privada = auxi.carregar_chave_privada(CHAVE_PRIVADA)
+    evento = auxi.criar_evento("pedido.excluido", {
+        "pedido_id": pedido_id,
+        "produtos": produtos_pedido
+    })
+
+    try:
+        conexao, canal = rmq.criar_canal()
+        rmq.publicar_evento(canal, rmq.EXCHANGE_ECOMMERCE, evento, chave_privada)
+        conexao.close()
+    except Exception as e:
+        print(f"Erro ao publicar pedido.excluido no RabbitMQ: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao publicar evento no barramento: {str(e)}")
+
+    return {
+        "status": "sucesso",
+        "pedido_id": pedido_id,
+        "mensagem": "Pedido cancelado com sucesso."
     }
 
 @app.post("/promocoes/inscrever")
